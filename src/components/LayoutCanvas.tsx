@@ -19,6 +19,8 @@ interface Props {
   pages: PageData[];
   highlights: Highlight[];
   clean: boolean;
+  markTitles?: Record<string, string>;
+  sheetClass?: string;
   onMarkClick: (id: string, e: ReactMouseEvent) => void;
   onSelect: (sel: LayoutSelection) => void;
   onPageSeen: (page: number) => void;
@@ -31,6 +33,10 @@ const HL_FILL: Record<MarkColor, string> = {
   moss: "var(--hl-moss)",
   sky: "var(--hl-sky)",
   amber: "var(--hl-amber)",
+  violet: "var(--hl-violet)",
+  teal: "var(--hl-teal)",
+  graphite: "var(--hl-graphite)",
+  coral: "var(--hl-coral)",
 };
 const HL_SOLID: Record<MarkColor, string> = {
   sun: "var(--hl-sun-solid)",
@@ -38,6 +44,10 @@ const HL_SOLID: Record<MarkColor, string> = {
   moss: "var(--hl-moss-solid)",
   sky: "var(--hl-sky-solid)",
   amber: "var(--hl-amber-solid)",
+  violet: "var(--hl-violet-solid)",
+  teal: "var(--hl-teal-solid)",
+  graphite: "var(--hl-graphite-solid)",
+  coral: "var(--hl-coral-solid)",
 };
 
 function markStyle(r: RectF, type: MarkType, color: MarkColor): CSSProperties {
@@ -71,6 +81,8 @@ function PageBlock({
   page,
   highlights,
   clean,
+  markTitles,
+  sheetClass,
   onMarkClick,
   onSelect,
   pageNotes,
@@ -78,6 +90,8 @@ function PageBlock({
   page: PageData;
   highlights: Highlight[];
   clean: boolean;
+  markTitles?: Record<string, string>;
+  sheetClass?: string;
   onMarkClick: (id: string, e: ReactMouseEvent) => void;
   onSelect: (sel: LayoutSelection) => void;
   pageNotes?: (pageNum: number) => ReactNode;
@@ -148,7 +162,7 @@ function PageBlock({
       <div
         ref={ref}
         data-page={page.pageNum}
-        className="paper-sheet relative select-text overflow-hidden rounded-[3px]"
+        className={`paper-sheet relative select-text overflow-hidden rounded-[3px] ${sheetClass ?? ""}`}
         style={{
           aspectRatio: `${page.w} / ${page.h}`,
           contentVisibility: "auto",
@@ -170,6 +184,7 @@ function PageBlock({
                     key={`${hl.id}-${i}`}
                     data-lh={hl.id}
                     className="pa-lh"
+                    title={markTitles?.[hl.id] || undefined}
                     style={markStyle(r, hl.type, hl.color)}
                   />
                 ))
@@ -206,13 +221,13 @@ export default function LayoutCanvas({
   pages,
   highlights,
   clean,
+  markTitles,
+  sheetClass,
   onMarkClick,
   onSelect,
   onPageSeen,
   pageNotes,
 }: Props) {
-  const seenRef = useRef<(el: Element | null) => void>(() => undefined);
-
   useEffect(() => {
     const io = new IntersectionObserver(
       (entries) => {
@@ -226,7 +241,6 @@ export default function LayoutCanvas({
       { rootMargin: "-42% 0px -50% 0px", threshold: 0 }
     );
     document.querySelectorAll("[data-page]").forEach((el) => io.observe(el));
-    seenRef.current = (el) => (el ? io.observe(el) : undefined);
     return () => io.disconnect();
   }, [pages, onPageSeen]);
 
@@ -238,6 +252,8 @@ export default function LayoutCanvas({
           page={p}
           highlights={highlights}
           clean={clean}
+          markTitles={markTitles}
+          sheetClass={sheetClass}
           onMarkClick={onMarkClick}
           onSelect={onSelect}
           pageNotes={pageNotes}

@@ -25,7 +25,7 @@ export default function TocRail({ entries, activeId, progress, onJump, meta, hea
       className="hidden w-60 shrink-0 flex-col gap-5 overflow-y-auto px-5 py-10 lg:flex"
       aria-label="Reading rail"
     >
-      <div className="desk-card rounded-lg p-4" style={{ rotate: "-0.4deg" }}>
+      <div className="desk-card tilted rounded-lg p-4" style={{ rotate: "-0.4deg" }}>
         <p className="text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-ink-faint">
           {heading}
         </p>
@@ -62,7 +62,9 @@ export default function TocRail({ entries, activeId, progress, onJump, meta, hea
                   <button
                     onClick={() => onJump(e.id)}
                     className={`group flex w-full items-baseline gap-2 rounded-md px-2 py-1.5 text-left text-[0.8rem] leading-snug transition-colors ${
-                      active ? "bg-[rgba(var(--shadow-ink),0.08)] font-semibold text-accent-deep" : "text-ink-soft hover:bg-[rgba(var(--shadow-ink),0.05)] hover:text-ink"
+                      active
+                        ? "bg-[rgba(var(--shadow-ink),0.08)] font-semibold text-accent-deep"
+                        : "text-ink-soft hover:bg-[rgba(var(--shadow-ink),0.05)] hover:text-ink"
                     }`}
                     style={{ paddingLeft: `${0.5 + ((e.level ?? 2) - 1) * 0.85}rem` }}
                     aria-current={active ? "location" : undefined}

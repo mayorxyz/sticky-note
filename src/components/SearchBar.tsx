@@ -76,7 +76,9 @@ export default function SearchBar({ source, onJumpText, onJumpPage, onClose }: P
     return (
       <>
         {label.slice(0, at)}
-        <mark className="rounded-sm bg-[var(--hl-sun)] px-0.5 text-inherit">{label.slice(at, at + query.length)}</mark>
+        <mark className="rounded-sm bg-[var(--hl-sun)] px-0.5 text-inherit">
+          {label.slice(at, at + query.length)}
+        </mark>
         {label.slice(at + query.length)}
       </>
     );
@@ -127,7 +129,9 @@ export default function SearchBar({ source, onJumpText, onJumpPage, onClose }: P
                 onClick={() => jump(m)}
               >
                 {m.page !== undefined && (
-                  <span className="mr-1.5 font-display text-xs font-bold text-accent-deep">p. {m.page}</span>
+                  <span className="mr-1.5 font-display text-xs font-bold text-accent-deep">
+                    p. {m.page}
+                  </span>
                 )}
                 {renderLabel(m.label)}
               </button>

@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant black (&:where(.black, .black *));
 
 @theme inline {
   --color-paper: var(--paper);
@@ -17,7 +18,12 @@
   --font-body: "Inter", "Helvetica Neue", Arial, sans-serif;
 }
 
-/* ————— Paper tokens: one system for desk, sheets, notes and marks ————— */
+/* ————— Paper tokens: desk, sheets, notes and marks —————
+ * Three tones: Light kraft · Dark (aged brown) · Black (midnight paper).
+ * Sticky notes stay bright on every tone — real notes don't darken with the room —
+ * so note "ink" text tokens stay deep everywhere; *-ui variants adapt for desk use
+ * (connectors, icons) where they sit on the themed surface.
+ */
 :root {
   --paper: #f4ecd8;
   --paper-deep: #e9dec2;
@@ -27,6 +33,7 @@
   --ink-soft: #5d5344;
   --ink-faint: #8d8069;
   --line: #d9cba6;
+  --edge: rgba(43, 38, 32, 0.13);
   --accent: #a33d2a;
   --accent-deep: #7c2d1f;
   --shadow-ink: 43, 38, 32;
@@ -37,16 +44,27 @@
   --ink-blue: #27439e;
   --ink-red: #b02a2a;
   --ink-pencil: #57534a;
+  --ink-blue-ui: #27439e;
+  --ink-red-ui: #b02a2a;
+  --ink-pencil-ui: #57534a;
   --hl-sun: rgba(241, 199, 60, 0.5);
   --hl-rose: rgba(238, 116, 154, 0.42);
   --hl-moss: rgba(112, 187, 122, 0.45);
   --hl-sky: rgba(94, 168, 231, 0.42);
   --hl-amber: rgba(243, 158, 58, 0.45);
+  --hl-violet: rgba(167, 119, 225, 0.42);
+  --hl-teal: rgba(64, 178, 168, 0.42);
+  --hl-graphite: rgba(96, 96, 106, 0.38);
+  --hl-coral: rgba(244, 122, 95, 0.45);
   --hl-sun-solid: #c79a10;
   --hl-rose-solid: #c2416b;
   --hl-moss-solid: #2f7d46;
   --hl-sky-solid: #22649e;
   --hl-amber-solid: #b05e0a;
+  --hl-violet-solid: #6d3fc0;
+  --hl-teal-solid: #0e7d74;
+  --hl-graphite-solid: #4a4a55;
+  --hl-coral-solid: #cf5230;
   --font-note-caveat: "Caveat", "Segoe Script", cursive;
   --font-note-kalam: "Kalam", "Comic Sans MS", cursive;
   --font-note-patrick: "Patrick Hand", "Comic Sans MS", cursive;
@@ -61,26 +79,75 @@
   --ink-soft: #b7ab8e;
   --ink-faint: #8b8066;
   --line: #5c4f36;
+  --edge: rgba(0, 0, 0, 0.28);
   --accent: #d97b52;
-  --accent-deep: #b25a38;
+  --accent-deep: #e0926d;
   --shadow-ink: 10, 8, 5;
   --grain-opacity: 0.1;
   --crease-opacity: 0.17;
-  --note-paper: #d9c977;
-  --note-paper-deep: #c4b25e;
-  --ink-blue: #a9bcf2;
-  --ink-red: #ef9d9d;
-  --ink-pencil: #cfc7b0;
+  --note-paper: #f6eca0;
+  --note-paper-deep: #e0d276;
+  --ink-blue-ui: #a9bcf2;
+  --ink-red-ui: #ef9d9d;
+  --ink-pencil-ui: #cfc7b0;
   --hl-sun: rgba(206, 168, 44, 0.5);
   --hl-rose: rgba(199, 92, 128, 0.48);
   --hl-moss: rgba(92, 156, 102, 0.5);
   --hl-sky: rgba(78, 138, 196, 0.5);
   --hl-amber: rgba(203, 132, 48, 0.5);
+  --hl-violet: rgba(140, 100, 195, 0.5);
+  --hl-teal: rgba(64, 150, 142, 0.5);
+  --hl-graphite: rgba(130, 130, 142, 0.42);
+  --hl-coral: rgba(200, 104, 78, 0.5);
   --hl-sun-solid: #d8b13a;
   --hl-rose-solid: #d9799a;
   --hl-moss-solid: #7cb98a;
   --hl-sky-solid: #7fb1de;
   --hl-amber-solid: #dda257;
+  --hl-violet-solid: #b08ae0;
+  --hl-teal-solid: #6cc4ba;
+  --hl-graphite-solid: #a0a0ae;
+  --hl-coral-solid: #ef9671;
+}
+
+.black {
+  --paper: #191510;
+  --paper-deep: #14110c;
+  --sheet: #221d15;
+  --sheet-deep: #1b1710;
+  --ink: #ece3cd;
+  --ink-soft: #b5a989;
+  --ink-faint: #82775c;
+  --line: #3d3421;
+  --edge: rgba(236, 227, 205, 0.11);
+  --accent: #d98e5f;
+  --accent-deep: #e5a67d;
+  --shadow-ink: 0, 0, 0;
+  --grain-opacity: 0.09;
+  --crease-opacity: 0.15;
+  --note-paper: #f6eca0;
+  --note-paper-deep: #e0d276;
+  --ink-blue-ui: #b7c8f5;
+  --ink-red-ui: #f2abab;
+  --ink-pencil-ui: #d6cdb4;
+  --hl-sun: rgba(196, 158, 38, 0.52);
+  --hl-rose: rgba(189, 86, 121, 0.5);
+  --hl-moss: rgba(86, 148, 96, 0.52);
+  --hl-sky: rgba(74, 132, 190, 0.52);
+  --hl-amber: rgba(193, 124, 42, 0.52);
+  --hl-violet: rgba(134, 94, 190, 0.52);
+  --hl-teal: rgba(58, 142, 134, 0.52);
+  --hl-graphite: rgba(122, 122, 134, 0.44);
+  --hl-coral: rgba(190, 96, 70, 0.52);
+  --hl-sun-solid: #d8b13a;
+  --hl-rose-solid: #d9799a;
+  --hl-moss-solid: #7cb98a;
+  --hl-sky-solid: #7fb1de;
+  --hl-amber-solid: #dda257;
+  --hl-violet-solid: #b08ae0;
+  --hl-teal-solid: #6cc4ba;
+  --hl-graphite-solid: #a0a0ae;
+  --hl-coral-solid: #ef9671;
 }
 
 html, body, #root { height: 100%; }
@@ -92,6 +159,7 @@ body {
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  transition: background-color 0.35s ease, color 0.35s ease;
 }
 
 ::selection { background: var(--hl-sun); }
@@ -107,7 +175,7 @@ body {
   background-size: 240px 240px;
   mix-blend-mode: multiply;
 }
-.dark .grain-layer { mix-blend-mode: screen; }
+.dark .grain-layer, .black .grain-layer { mix-blend-mode: screen; }
 
 .crease-layer {
   position: fixed;
@@ -119,14 +187,14 @@ body {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1400' height='1400'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006 0.011' numOctaves='5' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.93 0 0 0 0 0.9 0 0 0 0 0.82 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='1400' height='1400' filter='url(%23c)'/%3E%3C/svg%3E");
   background-size: 1400px 1400px;
 }
-.dark .crease-layer { mix-blend-mode: overlay; }
+.dark .crease-layer, .black .crease-layer { mix-blend-mode: overlay; }
 
 .vignette-layer {
   position: fixed;
   inset: 0;
   z-index: 58;
   pointer-events: none;
-  background: radial-gradient(120% 90% at 50% 8%, transparent 55%, rgba(var(--shadow-ink), 0.14) 100%);
+  background: radial-gradient(120% 90% at 50% 8%, transparent 55%, rgba(var(--shadow-ink), 0.16) 100%);
 }
 
 /* ————— Sheets & cards ————— */
@@ -134,21 +202,23 @@ body {
   background:
     linear-gradient(168deg, rgba(255, 255, 255, 0.14), transparent 42%),
     var(--sheet);
-  border: 1px solid rgba(var(--shadow-ink), 0.1);
+  border: 1px solid var(--edge);
   box-shadow:
     0 1px 2px rgba(var(--shadow-ink), 0.1),
     0 6px 16px -6px rgba(var(--shadow-ink), 0.22),
     0 24px 48px -18px rgba(var(--shadow-ink), 0.28);
+  transition: background-color 0.3s ease;
 }
 
 .desk-card {
+  position: relative;
   background: linear-gradient(172deg, rgba(255, 255, 255, 0.1), transparent 46%), var(--sheet);
-  border: 1px solid rgba(var(--shadow-ink), 0.12);
+  border: 1px solid var(--edge);
   box-shadow:
     0 1px 1px rgba(var(--shadow-ink), 0.08),
     0 4px 12px -6px rgba(var(--shadow-ink), 0.2),
     0 16px 32px -16px rgba(var(--shadow-ink), 0.24);
-  transition: transform 0.25s ease, box-shadow 0.25s ease, rotate 0.25s ease;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, rotate 0.25s ease, background-color 0.3s ease;
 }
 .desk-card:hover {
   transform: translateY(-3px) rotate(0deg);
@@ -156,6 +226,94 @@ body {
     0 2px 3px rgba(var(--shadow-ink), 0.1),
     0 10px 22px -8px rgba(var(--shadow-ink), 0.26),
     0 30px 54px -18px rgba(var(--shadow-ink), 0.3);
+}
+
+/* ————— Paper styles (layer on top of the token system, any theme) ————— */
+.paper-lined {
+  background-image:
+    repeating-linear-gradient(to bottom, transparent 0 30px, color-mix(in srgb, var(--line) 62%, transparent) 30px 31px),
+    linear-gradient(168deg, rgba(255, 255, 255, 0.14), transparent 42%);
+}
+.paper-grid {
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--line) 46%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 46%, transparent) 1px, transparent 1px),
+    linear-gradient(168deg, rgba(255, 255, 255, 0.14), transparent 42%);
+  background-size: 26px 26px, 26px 26px, auto;
+}
+.paper-dot {
+  background-image:
+    radial-gradient(circle, color-mix(in srgb, var(--line) 85%, transparent) 1.1px, transparent 1.6px),
+    linear-gradient(168deg, rgba(255, 255, 255, 0.14), transparent 42%);
+  background-size: 22px 22px, auto;
+  background-position: 4px 6px, 0 0;
+}
+.paper-crumpled { position: relative; }
+.paper-crumpled::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.34;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1400' height='1400'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.006 0.011' numOctaves='5' seed='11' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.93 0 0 0 0 0.9 0 0 0 0 0.82 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='1400' height='1400' filter='url(%23c)'/%3E%3C/svg%3E");
+  background-size: 1400px 1400px;
+}
+.dark .paper-crumpled::after, .black .paper-crumpled::after { mix-blend-mode: overlay; opacity: 0.42; }
+.paper-aged {
+  --sheet: #eee0b8;
+  --sheet-deep: #e5d5a8;
+  --ink: #3b2e17;
+  --ink-soft: #6b5731;
+  --ink-faint: #8a7444;
+  --line: #d0ba86;
+  --edge: rgba(94, 68, 22, 0.22);
+  background-image:
+    radial-gradient(circle at 12% 16%, rgba(122, 82, 24, 0.2) 0 2.5px, transparent 4px),
+    radial-gradient(circle at 84% 9%, rgba(122, 82, 24, 0.16) 0 2px, transparent 3.5px),
+    radial-gradient(circle at 71% 78%, rgba(122, 82, 24, 0.18) 0 3px, transparent 4.5px),
+    radial-gradient(circle at 24% 88%, rgba(122, 82, 24, 0.15) 0 2px, transparent 3.5px),
+    radial-gradient(circle at 47% 42%, rgba(122, 82, 24, 0.1) 0 1.5px, transparent 3px),
+    radial-gradient(120% 105% at 50% 50%, transparent 58%, rgba(94, 62, 18, 0.26) 100%),
+    linear-gradient(168deg, rgba(255, 244, 205, 0.4), rgba(226, 193, 124, 0.22) 55%, rgba(204, 164, 92, 0.3));
+}
+.paper-blueprint {
+  --sheet: #27466f;
+  --sheet-deep: #203b5e;
+  --paper-deep: #203b5e;
+  --ink: #e6eefb;
+  --ink-soft: #b6c8e4;
+  --ink-faint: #8ba3c8;
+  --line: rgba(214, 230, 252, 0.3);
+  --edge: rgba(9, 20, 38, 0.5);
+  --accent: #f2c14e;
+  --accent-deep: #f2c14e;
+  --hl-sun: rgba(242, 193, 78, 0.42);
+  --hl-rose: rgba(242, 139, 174, 0.42);
+  --hl-moss: rgba(143, 214, 160, 0.4);
+  --hl-sky: rgba(156, 199, 242, 0.42);
+  --hl-amber: rgba(242, 166, 90, 0.42);
+  --hl-violet: rgba(201, 167, 242, 0.42);
+  --hl-teal: rgba(127, 214, 204, 0.4);
+  --hl-graphite: rgba(200, 210, 224, 0.34);
+  --hl-coral: rgba(242, 151, 125, 0.42);
+  --hl-sun-solid: #f2c14e;
+  --hl-rose-solid: #f28bae;
+  --hl-moss-solid: #8fd6a0;
+  --hl-sky-solid: #9cc7f2;
+  --hl-amber-solid: #f2a65a;
+  --hl-violet-solid: #c9a7f2;
+  --hl-teal-solid: #7fd6cc;
+  --hl-graphite-solid: #c8d2e0;
+  --hl-coral-solid: #f2977d;
+  background-image:
+    linear-gradient(rgba(214, 230, 252, 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(214, 230, 252, 0.2) 1px, transparent 1px),
+    linear-gradient(rgba(214, 230, 252, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(214, 230, 252, 0.08) 1px, transparent 1px),
+    linear-gradient(168deg, rgba(255, 255, 255, 0.08), transparent 45%);
+  background-size: 96px 96px, 96px 96px, 16px 16px, 16px 16px, auto;
 }
 
 /* ————— Controls ————— */
@@ -193,6 +351,7 @@ body {
 }
 .btn-ink:hover { transform: translateY(-1px); }
 .btn-ink:active { transform: translateY(1px); box-shadow: 0 1px 0 rgba(var(--shadow-ink), 0.35); }
+.btn-ink:disabled { opacity: 0.45; pointer-events: none; }
 
 .btn-ghost {
   display: inline-flex;
@@ -225,6 +384,60 @@ body {
   border-radius: 999px;
 }
 
+/* ————— Settings ledger ————— */
+.ledger-row { border-top: 1px dashed var(--line); }
+.ledger-row:first-child { border-top: 0; }
+
+.switch {
+  position: relative;
+  width: 2.35rem;
+  height: 1.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--paper-deep);
+  transition: background 0.2s ease, border-color 0.2s ease;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 0.14rem;
+  left: 0.16rem;
+  width: 0.92rem;
+  height: 0.92rem;
+  border-radius: 999px;
+  background: var(--ink-faint);
+  box-shadow: 0 1px 2px rgba(var(--shadow-ink), 0.3);
+  transition: transform 0.22s cubic-bezier(0.3, 1.4, 0.5, 1), background 0.2s ease;
+}
+.switch[aria-checked="true"] { background: var(--accent); border-color: var(--accent-deep); }
+.switch[aria-checked="true"]::after { transform: translateX(1.02rem); background: var(--paper); }
+
+.seg {
+  display: inline-flex;
+  gap: 0.2rem;
+  padding: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: rgba(var(--shadow-ink), 0.045);
+}
+.seg > button {
+  padding: 0.32rem 0.7rem;
+  border-radius: 0.42rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  cursor: pointer;
+}
+.seg > button:hover { color: var(--ink); }
+.seg > button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: 0 2px 6px -2px rgba(var(--shadow-ink), 0.4);
+}
+
 /* ————— Marks (reflow) ————— */
 .pa-mark {
   cursor: pointer;
@@ -237,7 +450,7 @@ body {
   text-underline-offset: 0.18em;
 }
 .pa-mark:hover { filter: brightness(0.94) saturate(1.15); }
-.dark .pa-mark:hover { filter: brightness(1.2); }
+.dark .pa-mark:hover, .black .pa-mark:hover { filter: brightness(1.2); }
 
 .pa-lh {
   position: absolute;
@@ -245,7 +458,7 @@ body {
   border-radius: 2px;
   mix-blend-mode: multiply;
 }
-.dark .pa-lh { mix-blend-mode: screen; }
+.dark .pa-lh, .black .pa-lh { mix-blend-mode: screen; }
 
 /* ————— Sticky notes ————— */
 .pa-note {
@@ -274,7 +487,7 @@ body {
   bottom: 0;
   width: 17px;
   height: 17px;
-  background: linear-gradient(315deg, var(--paper-deep) 47%, var(--note-paper-deep) 50%, rgba(var(--shadow-ink), 0.28) 58%, var(--note-paper-deep) 66%);
+  background: linear-gradient(315deg, var(--paper-deep) 47%, var(--note-paper-deep) 50%, rgba(60, 50, 10, 0.3) 58%, var(--note-paper-deep) 66%);
   clip-path: polygon(100% 0, 100% 100%, 0 100%);
   border-radius: 0 0 3px 0;
   filter: drop-shadow(-1px -1px 1px rgba(var(--shadow-ink), 0.25));
@@ -323,7 +536,7 @@ body {
   line-height: 1.35;
   min-height: 3.2em;
 }
-.note-body::placeholder { color: rgba(var(--shadow-ink), 0.42); }
+.note-body::placeholder { color: rgba(70, 58, 12, 0.42); }
 
 .tag-chip {
   display: inline-flex;
@@ -334,12 +547,12 @@ body {
   font-weight: 600;
   padding: 0.05rem 0.38rem;
   border-radius: 999px;
-  background: rgba(var(--shadow-ink), 0.1);
-  color: rgba(var(--shadow-ink), 0.85);
+  background: rgba(60, 50, 10, 0.12);
+  color: rgba(50, 40, 8, 0.85);
   cursor: pointer;
   border: 1px solid transparent;
 }
-.tag-chip:hover { border-color: rgba(var(--shadow-ink), 0.3); }
+.tag-chip:hover { border-color: rgba(60, 50, 10, 0.35); }
 
 /* ————— Text layer over rendered pages ————— */
 .pa-textlayer { position: absolute; inset: 0; overflow: hidden; }
@@ -414,7 +627,14 @@ body {
 .pa-clean .pa-lh, .pa-clean .pa-notes, .pa-clean .pa-freenote, .pa-clean .pa-connectors, .pa-clean .pa-textlayer { display: none !important; }
 
 /* ————— Document prose ————— */
-.prose-paper { font-size: 1.02rem; line-height: 1.75; color: var(--ink); overflow-wrap: break-word; }
+.prose-paper {
+  font-size: var(--reading-size, 1.05rem);
+  width: min(100%, var(--reading-width, 760px));
+  margin-inline: auto;
+  line-height: 1.75;
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
 .prose-paper > * + * { margin-top: 0.9em; }
 .prose-paper h1, .prose-paper h2, .prose-paper h3 {
   font-family: var(--font-display);
@@ -460,6 +680,7 @@ kbd {
   padding: 0.05rem 0.3rem;
 }
 
+/* ————— Motion preferences: OS level and the manual override ————— */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -467,3 +688,10 @@ kbd {
     transition-duration: 0.01ms !important;
   }
 }
+.reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+.reduce-motion .tilted, .reduce-motion .desk-card:hover { rotate: 0deg !important; }
+.reduce-motion .wiggle-hover:hover { animation: none !important; }

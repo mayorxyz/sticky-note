@@ -1,6 +1,6 @@
 import {
-  useMemo,
   useRef,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
@@ -27,18 +27,20 @@ export interface ReflowSelection {
 interface Props {
   markdown: string;
   marks: Highlight[];
-  /** highlightId → id of the note element that describes it (ARIA) */
-  noteForMark?: Record<string, string>;
+  /** highlightId → user label, surfaced as tooltip on the mark */
+  markTitles?: Record<string, string>;
+  sheetClass?: string;
+  styleVars?: CSSProperties;
   onMarkClick: (id: string, e: ReactMouseEvent) => void;
   onSelect: (sel: ReflowSelection) => void;
-  articleRef: RefObject<HTMLElement>;
+  articleRef: RefObject<HTMLElement | null>;
 }
 
 interface Ctx {
   marks: TextMark[];
   counter: { n: number };
   slug: (t: string) => string;
-  noteForMark?: Record<string, string>;
+  markTitles?: Record<string, string>;
   onMarkClick: (id: string, e: ReactMouseEvent) => void;
 }
 
@@ -70,12 +72,14 @@ function segment(text: string, start: number, ctx: Ctx): ReactNode[] {
     const deco = decos
       .map((m) => (m.type === "underline" ? "underline" : "line-through"))
       .join(" ");
+    const label = ctx.markTitles?.[covering[0].id];
     out.push(
       <span
         key={`m${s}-${e}`}
         className="pa-mark"
         data-hlid={covering[0].id}
-        aria-describedby={ctx.noteForMark?.[covering[0].id]}
+        aria-describedby={`note-${covering[0].id}`}
+        title={label || undefined}
         onClick={(ev) => {
           ev.stopPropagation();
           ctx.onMarkClick(covering[0].id, ev);
@@ -129,9 +133,7 @@ function inline(tokens: Token[] | undefined, ctx: Ctx, keyPrefix: string): React
         out.push(<br key={key} />);
         break;
       case "strong":
-        out.push(
-          <strong key={key}>{inline((t as Tokens.Strong).tokens, ctx, key)}</strong>
-        );
+        out.push(<strong key={key}>{inline((t as Tokens.Strong).tokens, ctx, key)}</strong>);
         break;
       case "em":
         out.push(<em key={key}>{inline((t as Tokens.Em).tokens, ctx, key)}</em>);
@@ -163,7 +165,7 @@ function blocks(tokens: Token[], ctx: Ctx, keyPrefix: string): ReactNode[] {
       case "heading": {
         const h = t as Tokens.Heading;
         const id = ctx.slug(h.text);
-        const Tag = (`h${Math.min(6, h.depth)}`) as "h1";
+        const Tag = `h${Math.min(6, h.depth)}` as "h1";
         out.push(
           <Tag key={key} id={id}>
             {inline(h.tokens, ctx, key)}
@@ -247,9 +249,7 @@ function blocks(tokens: Token[], ctx: Ctx, keyPrefix: string): ReactNode[] {
 
 /* ————— DOM ↔ offset helpers ————— */
 
-export function selectionOffsets(
-  root: HTMLElement
-): { start: number; end: number } | null {
+export function selectionOffsets(root: HTMLElement): { start: number; end: number } | null {
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null;
   const range = sel.getRangeAt(0);
@@ -314,31 +314,35 @@ export function scrollToOffset(root: HTMLElement, offset: number): boolean {
 
 /* ————— component ————— */
 
-export default function ReflowCanvas({ markdown, marks, noteForMark, onMarkClick, onSelect, articleRef }: Props) {
-  const tokens = useMemo(() => lexMarkdown(markdown), [markdown]);
-  const textMarks = useMemo<TextMark[]>(
-    () =>
-      marks
-        .filter((m): m is Highlight & { anchor: { kind: "text"; start: number; end: number } } =>
-          m.anchor.kind === "text"
-        )
-        .map((m) => ({
-          id: m.id,
-          type: m.type,
-          color: m.color,
-          start: m.anchor.start,
-          end: m.anchor.end,
-        }))
-        .sort((a, b) => a.start - b.start),
-    [marks]
-  );
+export default function ReflowCanvas({
+  markdown,
+  marks,
+  markTitles,
+  sheetClass,
+  styleVars,
+  onMarkClick,
+  onSelect,
+  articleRef,
+}: Props) {
+  const textMarks: TextMark[] = marks
+    .filter(
+      (m): m is Highlight & { anchor: { kind: "text"; start: number; end: number } } =>
+        m.anchor.kind === "text"
+    )
+    .map((m) => ({
+      id: m.id,
+      type: m.type,
+      color: m.color,
+      start: m.anchor.start,
+      end: m.anchor.end,
+    }))
+    .sort((a, b) => a.start - b.start);
 
   const counterRef = useRef({ n: 0 });
   counterRef.current.n = 0;
-  // fresh slugger each render so heading ids stay aligned with extractToc
-  const slug = makeSlugger();
-  const ctx: Ctx = { marks: textMarks, counter: counterRef.current, slug, noteForMark, onMarkClick };
-  const rendered = blocks(tokens, ctx, "b");
+  const slug = makeSlugger(); // fresh per render — no accumulated state
+  const ctx: Ctx = { marks: textMarks, counter: counterRef.current, slug, markTitles, onMarkClick };
+  const rendered = blocks(lexMarkdown(markdown), ctx, "b");
 
   const rafRef = useRef(0);
   function scheduleSelectionCheck() {
@@ -363,9 +367,10 @@ export default function ReflowCanvas({ markdown, marks, noteForMark, onMarkClick
 
   return (
     <article
-      ref={articleRef}
+      ref={articleRef as RefObject<HTMLElement>}
       data-doc
-      className="prose-paper paper-sheet relative max-w-none rounded-[3px] px-6 py-10 sm:px-12 sm:py-14"
+      className={`prose-paper paper-sheet relative rounded-[3px] px-6 py-10 sm:px-12 sm:py-14 ${sheetClass ?? ""}`}
+      style={styleVars}
       onMouseUp={scheduleSelectionCheck}
       onKeyUp={(e) => {
         if (e.shiftKey) scheduleSelectionCheck();

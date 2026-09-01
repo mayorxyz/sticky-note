@@ -6,6 +6,7 @@ import {
   IconBook,
   IconDownload,
   IconFile,
+  IconGear,
   IconLayout,
   IconMoon,
   IconNote,
@@ -18,11 +19,14 @@ import {
 interface Props {
   docs: DocumentRecord[];
   annotations: Record<string, AnnotationsState>;
-  theme: "light" | "dark";
+  resolvedTheme: "light" | "dark" | "black";
+  sheetClass: string;
   onToggleTheme: () => void;
+  onOpenSettings: () => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
   onIngest: (doc: DocumentRecord, ann: AnnotationsState) => void;
+  onIngestMany: (docs: DocumentRecord[], annotations: Record<string, AnnotationsState>) => void;
   onSample: () => void;
 }
 
@@ -31,11 +35,14 @@ const TILTS = ["-0.8deg", "0.6deg", "-0.4deg", "0.9deg", "-0.6deg", "0.3deg"];
 export default function Library({
   docs,
   annotations,
-  theme,
+  resolvedTheme,
+  sheetClass,
   onToggleTheme,
+  onOpenSettings,
   onOpen,
   onDelete,
   onIngest,
+  onIngestMany,
   onSample,
 }: Props) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -50,12 +57,22 @@ export default function Library({
           app?: string;
           doc?: DocumentRecord;
           annotations?: AnnotationsState;
+          docs?: DocumentRecord[];
         };
-        if (!parsed?.doc?.id || !parsed.doc.title) throw new Error("bad file");
-        onIngest(
-          { ...parsed.doc, id: uid(), createdAt: new Date().toISOString() },
-          parsed.annotations ?? { highlights: [], notes: [] }
-        );
+        if (Array.isArray(parsed.docs)) {
+          // full-desk backup
+          const ann = (parsed.annotations ?? {}) as Record<string, AnnotationsState>;
+          onIngestMany(parsed.docs, ann);
+          return;
+        }
+        if (parsed?.doc?.id && parsed.doc.title) {
+          onIngest(
+            { ...parsed.doc, id: uid(), createdAt: new Date().toISOString() },
+            parsed.annotations ?? { highlights: [], notes: [] }
+          );
+          return;
+        }
+        throw new Error("bad file");
       } catch {
         window.alert("That doesn't look like a Paper Annotate backup file.");
       }
@@ -96,20 +113,24 @@ export default function Library({
               e.target.value = "";
             }}
           />
-          <button
-            className="btn-ghost"
-            onClick={() => importRef.current?.click()}
-            title="Restore a .json backup"
-          >
+          <button className="btn-ghost" onClick={() => importRef.current?.click()} title="Restore a .json backup">
             <IconDownload size={15} /> Restore
           </button>
           <button
             className="icon-btn"
+            onClick={onOpenSettings}
+            title="Desk settings"
+            aria-label="Open settings"
+          >
+            <IconGear size={19} />
+          </button>
+          <button
+            className="icon-btn"
             onClick={onToggleTheme}
-            title={theme === "dark" ? "Switch to daylight paper" : "Switch to lamplight paper"}
+            title="Quick paper-tone switch"
             aria-label="Toggle dark mode"
           >
-            {theme === "dark" ? <IconSun size={19} /> : <IconMoon size={19} />}
+            {resolvedTheme === "light" ? <IconMoon size={19} /> : <IconSun size={19} />}
           </button>
         </div>
       </header>
@@ -121,18 +142,14 @@ export default function Library({
           <div className="mb-4 flex items-baseline justify-between">
             <h2 className="font-display text-xl font-bold text-ink">Your desk</h2>
             <span className="text-xs font-medium uppercase tracking-[0.14em] text-ink-faint">
-              {docs.length === 0
-                ? "empty for now"
-                : `${docs.length} paper${docs.length === 1 ? "" : "s"}`}
+              {docs.length === 0 ? "empty for now" : `${docs.length} paper${docs.length === 1 ? "" : "s"}`}
             </span>
           </div>
 
           {docs.length === 0 ? (
-            <div className="desk-card flex flex-col items-center rounded-xl px-6 py-12 text-center" style={{ rotate: "0.3deg" }}>
+            <div className="desk-card tilted flex flex-col items-center rounded-xl px-6 py-12 text-center" style={{ rotate: "0.3deg" }}>
               <EmptyDeskArt />
-              <p className="mt-5 font-display text-lg font-semibold text-ink">
-                The desk is clear.
-              </p>
+              <p className="mt-5 font-display text-lg font-semibold text-ink">The desk is clear.</p>
               <p className="mt-1 max-w-sm text-sm leading-relaxed text-ink-soft">
                 Clip a PDF or a Markdown file above — or start with a short sample paper that
                 shows off marks, notes and the margin rail.
@@ -150,7 +167,7 @@ export default function Library({
                 return (
                   <li
                     key={doc.id}
-                    className="desk-card rise group flex flex-col overflow-hidden rounded-lg"
+                    className={`desk-card tilted rise group flex flex-col overflow-hidden rounded-lg ${sheetClass}`}
                     style={{ rotate: TILTS[i % TILTS.length], animationDelay: `${i * 60}ms` } as CSSProperties}
                   >
                     <button
@@ -183,9 +200,7 @@ export default function Library({
                       </span>
                     </button>
                     <div className="flex flex-1 flex-col p-4">
-                      <h3 className="line-clamp-2 font-display text-base font-bold leading-snug text-ink">
-                        {doc.title}
-                      </h3>
+                      <h3 className="line-clamp-2 font-display text-base font-bold leading-snug text-ink">{doc.title}</h3>
                       <p className="mt-1 text-xs text-ink-faint">
                         {formatDate(doc.createdAt)}
                         {doc.pageCount ? ` · ${doc.pageCount} pages` : ""}
@@ -198,7 +213,7 @@ export default function Library({
                           </svg>
                           {marks}
                         </span>
-                        <span className="inline-flex items-center gap-1 text-[var(--ink-blue)]">
+                        <span className="inline-flex items-center gap-1 text-[var(--ink-blue-ui)]">
                           <IconNote size={13} /> {notes}
                         </span>
                       </div>
@@ -241,11 +256,13 @@ export default function Library({
         </section>
       </main>
 
-      <footer className="mt-14 flex items-center justify-between text-xs text-ink-faint">
+      <footer className="mt-14 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-faint">
         <span className="inline-flex items-center gap-1.5">
           <IconFile size={13} /> Local-only · nothing leaves this browser
         </span>
-        <span>Stored under <code className="font-semibold">paper-annotate.docs.v1</code></span>
+        <span>
+          Stored under <code className="font-semibold">paper-annotate.docs.v1</code>
+        </span>
       </footer>
     </div>
   );

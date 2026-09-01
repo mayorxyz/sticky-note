@@ -1,11 +1,24 @@
 /* Core data model — persisted under "paper-annotate.docs.v1". */
 
 export type MarkType = "highlight" | "underline" | "strikethrough";
-export type MarkColor = "sun" | "rose" | "moss" | "sky" | "amber";
+export type MarkColor =
+  | "sun"
+  | "rose"
+  | "moss"
+  | "sky"
+  | "amber"
+  | "violet"
+  | "teal"
+  | "graphite"
+  | "coral";
 export type NoteFont = "caveat" | "kalam" | "patrick-hand";
 export type NoteInk = "blue" | "red" | "pencil";
 export type Placement = "margin" | "freeform";
 export type RenderMode = "reflow" | "layout";
+export type PaperStyle = "plain" | "lined" | "grid" | "dot" | "crumpled" | "aged" | "blueprint";
+export type Orientation = "portrait" | "landscape";
+export type ThemeChoice = "light" | "dark" | "black" | "system";
+export type ExportFormat = "pdf" | "markdown" | "json";
 
 /** Fractional rect (0..1) relative to its page — resolution independent. */
 export interface RectF {
@@ -47,7 +60,7 @@ export interface DocumentRecord {
   fileName?: string;
   pageCount?: number;
   words?: number;
-  /** document-wide default placement for new sticky notes */
+  /** per-document default placement for new notes (overrides the global setting) */
   notePlacement?: Placement;
 }
 
@@ -89,11 +102,34 @@ export interface AnnotationsState {
   notes: Note[];
 }
 
+/* ————— Settings (nested in StoredData, single storage funnel) ————— */
+
+export interface Settings {
+  theme: ThemeChoice;
+  paperStyle: PaperStyle;
+  orientation: Orientation;
+  /** ordered subset of the full palette shown in the picker */
+  activeHighlightColors: MarkColor[];
+  /** color key → user-assigned meaning, shown as tooltip */
+  highlightLabels: Record<string, string>;
+  defaultNotePlacement: Placement;
+  defaultNoteFont: NoteFont;
+  defaultNoteInk: NoteInk;
+  /** reflow body size in px */
+  readingFontSize: number;
+  /** reflow content column width in px */
+  readingWidth: number;
+  reduceMotion: boolean;
+  defaultExportFormat: ExportFormat;
+}
+
 export interface StoredData {
   version: 1;
   docs: DocumentRecord[];
   annotations: Record<string, AnnotationsState>;
+  /** legacy location for the theme (kept for migration compatibility) */
   theme?: "light" | "dark";
+  settings?: Settings;
 }
 
 /* ————— presentation metadata ————— */
@@ -104,6 +140,10 @@ export const MARK_COLORS: { key: MarkColor; label: string }[] = [
   { key: "moss", label: "Moss" },
   { key: "sky", label: "Sky" },
   { key: "amber", label: "Amber" },
+  { key: "violet", label: "Violet" },
+  { key: "teal", label: "Teal" },
+  { key: "graphite", label: "Graphite" },
+  { key: "coral", label: "Coral" },
 ];
 
 export const MARK_TYPES: { key: MarkType; label: string }[] = [
@@ -124,4 +164,18 @@ export const NOTE_INKS: { key: NoteInk; label: string; css: string }[] = [
   { key: "pencil", label: "Pencil", css: "var(--ink-pencil)" },
 ];
 
+export const PAPER_STYLES: { key: PaperStyle; label: string }[] = [
+  { key: "plain", label: "Plain" },
+  { key: "lined", label: "Lined" },
+  { key: "grid", label: "Grid" },
+  { key: "dot", label: "Dot grid" },
+  { key: "crumpled", label: "Crumpled" },
+  { key: "aged", label: "Aged" },
+  { key: "blueprint", label: "Blueprint" },
+];
+
 export const EMPTY_ANNOTATIONS: AnnotationsState = { highlights: [], notes: [] };
+
+export function sheetClass(style: PaperStyle): string {
+  return style === "plain" ? "" : `paper-${style}`;
+}

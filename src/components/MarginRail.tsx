@@ -1,6 +1,5 @@
 import { useEffect, useState, type RefObject } from "react";
 import type { Note, NoteInk } from "../data/types";
-import { NOTE_INKS } from "../data/types";
 import StickyNote from "./StickyNote";
 
 interface RailProps {
@@ -27,10 +26,11 @@ export function MarginRail({ notes, snippetFor, onPatch, onDelete, emptyHint }: 
   );
 }
 
+/** Ink colors for lines drawn on the desk — theme-safe *-ui variants. */
 const INK_STROKE: Record<NoteInk, string> = {
-  blue: NOTE_INKS[0].css,
-  red: NOTE_INKS[1].css,
-  pencil: NOTE_INKS[2].css,
+  blue: "var(--ink-blue-ui)",
+  red: "var(--ink-red-ui)",
+  pencil: "var(--ink-pencil-ui)",
 };
 
 interface ConnectorProps {
@@ -41,8 +41,9 @@ interface ConnectorProps {
 }
 
 /**
- * Draws a thin curved ink thread from each margin note to the mark it
- * annotates. Recomputed on scroll/resize/annotation changes.
+ * Draws a faint curved ink thread with a small arrowhead from each margin note
+ * to the mark it annotates. Notes without a highlightId (standalone notes) get
+ * no connector at all. Recomputed on scroll/resize/annotation changes.
  */
 export function ConnectorLayer({ containerRef, scrollerRef, notes, revision }: ConnectorProps) {
   const [paths, setPaths] = useState<{ id: string; d: string; color: string }[]>([]);
@@ -60,6 +61,7 @@ export function ConnectorLayer({ containerRef, scrollerRef, notes, revision }: C
         const rootRect = root.getBoundingClientRect();
         const next: { id: string; d: string; color: string }[] = [];
         for (const note of notes) {
+          // Only linked notes get a connector — standalone notes stay unattached.
           if (note.placement !== "margin" || !note.highlightId) continue;
           const noteEl = root.querySelector(`[data-note-anchor="${note.id}"]`);
           const markEl = root.querySelector(
@@ -70,14 +72,14 @@ export function ConnectorLayer({ containerRef, scrollerRef, notes, revision }: C
           const b = noteEl.getBoundingClientRect();
           const x1 = a.right - rootRect.left + 2;
           const y1 = a.top + a.height / 2 - rootRect.top;
-          const x2 = b.left - rootRect.left - 3;
+          const x2 = b.left - rootRect.left - 4;
           const y2 = b.top - rootRect.top + 18;
           const cx = x1 + Math.max(26, (x2 - x1) * 0.55);
-          next.push({
-            id: note.id,
-            color: INK_STROKE[note.ink],
-            d: `M ${x1.toFixed(1)} ${y1.toFixed(1)} C ${cx.toFixed(1)} ${y1.toFixed(1)}, ${cx.toFixed(1)} ${y2.toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}`,
-          });
+          // Arrowhead at the mark end, pointing from the note toward the mark.
+          const d =
+            `M ${(x1 + 6).toFixed(1)} ${(y1 - 3.4).toFixed(1)} L ${x1.toFixed(1)} ${y1.toFixed(1)} L ${(x1 + 6).toFixed(1)} ${(y1 + 3.4).toFixed(1)}` +
+            ` M ${x1.toFixed(1)} ${y1.toFixed(1)} C ${cx.toFixed(1)} ${y1.toFixed(1)}, ${cx.toFixed(1)} ${y2.toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+          next.push({ id: note.id, color: INK_STROKE[note.ink], d });
         }
         setPaths(next);
       });
@@ -107,10 +109,10 @@ export function ConnectorLayer({ containerRef, scrollerRef, notes, revision }: C
           d={p.d}
           fill="none"
           stroke={p.color}
-          strokeWidth="1.5"
-          strokeDasharray="1 5.5"
+          strokeWidth="1.1"
+          strokeDasharray="0.5 5"
           strokeLinecap="round"
-          opacity="0.8"
+          opacity="0.55"
         />
       ))}
     </svg>

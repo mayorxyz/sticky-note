@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from "react";
 import { Rnd } from "react-rnd";
 import type {
   AnnotationsState,
@@ -9,6 +17,7 @@ import type {
   Note,
   PageData,
   Placement,
+  Settings,
 } from "../data/types";
 import { MARK_COLORS, MARK_TYPES } from "../data/types";
 import { useHistory } from "../lib/undo";
@@ -26,6 +35,7 @@ import {
   IconArrowLeft,
   IconEye,
   IconEyeOff,
+  IconGear,
   IconHighlighter,
   IconLayout,
   IconMoon,
@@ -48,10 +58,13 @@ type SelPayload = ({ kind: "text" } & ReflowSelection) | ({ kind: "page" } & Lay
 interface Props {
   doc: DocumentRecord;
   annotations: AnnotationsState;
+  settings: Settings;
+  sheetClass: string;
   onAnnotationsChange: (docId: string, ann: AnnotationsState) => void;
   onDocChange: (doc: DocumentRecord) => void;
   onBack: () => void;
-  theme: "light" | "dark";
+  onOpenSettings: () => void;
+  resolvedTheme: "light" | "dark" | "black";
   onToggleTheme: () => void;
   onToast: (msg: string) => void;
 }
@@ -67,7 +80,7 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-const MARK_ICON: Record<MarkType, (p: { size?: number }) => React.ReactNode> = {
+const MARK_ICON: Record<MarkType, (p: { size?: number }) => ReactNode> = {
   highlight: (p) => <IconHighlighter {...p} />,
   underline: (p) => <IconUnderline {...p} />,
   strikethrough: (p) => <IconStrike {...p} />,
@@ -76,10 +89,13 @@ const MARK_ICON: Record<MarkType, (p: { size?: number }) => React.ReactNode> = {
 export default function DocumentView({
   doc,
   annotations,
+  settings,
+  sheetClass,
   onAnnotationsChange,
   onDocChange,
   onBack,
-  theme,
+  onOpenSettings,
+  resolvedTheme,
   onToggleTheme,
   onToast,
 }: Props) {
@@ -107,11 +123,48 @@ export default function DocumentView({
 
   const isMobile = useMediaQuery("(max-width: 767px)");
 
-  /* persist annotations */
   useEffect(() => {
     onAnnotationsChange(doc.id, hist.present);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hist.present, doc.id]);
+
+  /* ————— settings-derived values ————— */
+
+  const palette = useMemo(() => {
+    const active = settings.activeHighlightColors.filter((k) =>
+      MARK_COLORS.some((c) => c.key === k)
+    );
+    const source = active.length ? active : MARK_COLORS.map((c) => c.key);
+    return MARK_COLORS.filter((c) => source.includes(c.key)).sort(
+      (a, b) => source.indexOf(a.key) - source.indexOf(b.key)
+    );
+  }, [settings.activeHighlightColors]);
+
+  const markTitles = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const h of highlights) {
+      const label = settings.highlightLabels[h.color];
+      if (label) map[h.id] = label;
+    }
+    return map;
+  }, [highlights, settings.highlightLabels]);
+
+  const noteForMark = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const n of notes) if (n.highlightId) map[n.highlightId] = `note-${n.id}`;
+    return map;
+  }, [notes]);
+
+  const readingStyle = useMemo<CSSProperties>(() => {
+    const width =
+      settings.readingWidth + (settings.orientation === "landscape" ? 150 : 0);
+    return {
+      "--reading-size": `${settings.readingFontSize}px`,
+      "--reading-width": `${width}px`,
+    } as CSSProperties;
+  }, [settings.readingFontSize, settings.readingWidth, settings.orientation]);
+
+  const layoutMaxW = settings.orientation === "landscape" ? 1180 : 820;
 
   /* ————— mutations ————— */
 
@@ -142,7 +195,9 @@ export default function DocumentView({
 
   function attachNote(existingHlId?: string) {
     const payload = selPayload;
-    const placement: Placement = isMobile ? "margin" : doc.notePlacement ?? "margin";
+    const placement: Placement = isMobile
+      ? "margin"
+      : doc.notePlacement ?? settings.defaultNotePlacement;
     let position: Note["position"] = { afterHighlight: true };
     let page: number | undefined;
     if (placement === "freeform") {
@@ -190,8 +245,8 @@ export default function DocumentView({
       highlightId: hlId,
       content: "",
       tags: [],
-      font: "caveat",
-      ink: "blue",
+      font: settings.defaultNoteFont,
+      ink: settings.defaultNoteInk,
       placement,
       page,
       position,
@@ -343,10 +398,7 @@ export default function DocumentView({
   const plainText = useMemo(() => plainTextOfTokens(tokens), [tokens]);
 
   const visibleNotes = useMemo(
-    () =>
-      tagFilter.length
-        ? notes.filter((n) => n.tags.some((t) => tagFilter.includes(t)))
-        : notes,
+    () => (tagFilter.length ? notes.filter((n) => n.tags.some((t) => tagFilter.includes(t))) : notes),
     [notes, tagFilter]
   );
 
@@ -372,12 +424,6 @@ export default function DocumentView({
     const m = new Map<string, number>();
     for (const n of notes) for (const t of n.tags) m.set(t, (m.get(t) ?? 0) + 1);
     return Array.from(m.entries()).sort((a, b) => b[1] - a[1]);
-  }, [notes]);
-
-  const noteForMark = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const n of notes) if (n.highlightId) map[n.highlightId] = `note-${n.id}`;
-    return map;
   }, [notes]);
 
   function snippetFor(noteId: string): string | undefined {
@@ -461,7 +507,7 @@ export default function DocumentView({
   }
 
   /* ————— popover positioning ————— */
-  const tbWidth = 330;
+  const tbWidth = 356;
   const tbLeft = selPayload
     ? Math.min(
         Math.max(8, selPayload.rect.left + selPayload.rect.width / 2 - tbWidth / 2),
@@ -476,23 +522,20 @@ export default function DocumentView({
 
   const markMenuHl = markMenu ? highlights.find((h) => h.id === markMenu.id) : undefined;
   const markMenuNote = markMenu ? notes.find((n) => n.highlightId === markMenu.id) : undefined;
+  const docPlacement = doc.notePlacement ?? settings.defaultNotePlacement;
 
   /* ————— render ————— */
   return (
     <div className="relative z-10 flex h-dvh flex-col">
-      {/* toolbar */}
       <header className="relative z-40 border-b border-[rgba(var(--shadow-ink),0.16)] bg-[var(--paper)]/95 px-3 py-2 backdrop-blur-sm sm:px-5">
         <div className="mx-auto flex max-w-[110rem] items-center gap-1.5">
           <button className="icon-btn" onClick={onBack} title="Back to the library" aria-label="Back to library">
             <IconArrowLeft size={18} />
           </button>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate font-display text-base font-bold leading-tight text-ink sm:text-lg">
-              {doc.title}
-            </h1>
+            <h1 className="truncate font-display text-base font-bold leading-tight text-ink sm:text-lg">{doc.title}</h1>
             <p className="hidden text-[0.62rem] font-medium uppercase tracking-[0.16em] text-ink-faint sm:block">
-              {doc.sourceType === "pdf" ? "PDF" : "Text"} · {doc.mode} · {highlights.length} marks ·{" "}
-              {notes.length} notes
+              {doc.sourceType === "pdf" ? "PDF" : "Text"} · {doc.mode} · {highlights.length} marks · {notes.length} notes
             </p>
           </div>
 
@@ -522,17 +565,17 @@ export default function DocumentView({
           )}
 
           <button
-            className={`icon-btn ${!isMobile && (doc.notePlacement ?? "margin") === "freeform" ? "on" : ""}`}
-            title={`New notes default to ${(doc.notePlacement ?? "margin") === "margin" ? "the margin rail" : "freeform"} — click to switch`}
+            className={`icon-btn ${!isMobile && docPlacement === "freeform" ? "on" : ""}`}
+            title={`New notes default to ${docPlacement} — click to switch`}
             aria-label="Toggle default note placement"
             onClick={() =>
               onDocChange({
                 ...doc,
-                notePlacement: (doc.notePlacement ?? "margin") === "margin" ? "freeform" : "margin",
+                notePlacement: docPlacement === "margin" ? "freeform" : "margin",
               })
             }
           >
-            {(doc.notePlacement ?? "margin") === "margin" ? <IconRows size={17} /> : <IconMove size={17} />}
+            {docPlacement === "margin" ? <IconRows size={17} /> : <IconMove size={17} />}
           </button>
 
           <div className="relative">
@@ -578,27 +621,25 @@ export default function DocumentView({
 
           <span className="mx-0.5 hidden h-5 w-px bg-line sm:block" aria-hidden="true" />
 
-          <ExportMenu doc={doc} annotations={hist.present} onToast={onToast} />
+          <ExportMenu doc={doc} annotations={hist.present} preferred={settings.defaultExportFormat} onToast={onToast} />
 
-          <button className="icon-btn" onClick={onToggleTheme} title="Toggle paper tone" aria-label="Toggle dark mode">
-            {theme === "dark" ? <IconSun size={17} /> : <IconMoon size={17} />}
+          <button className="icon-btn" onClick={onOpenSettings} title="Desk settings" aria-label="Open settings">
+            <IconGear size={17} />
+          </button>
+          <button className="icon-btn" onClick={onToggleTheme} title="Quick paper-tone switch" aria-label="Toggle dark mode">
+            {resolvedTheme === "light" ? <IconMoon size={17} /> : <IconSun size={17} />}
           </button>
         </div>
 
-        {/* tag filter strip */}
         {allTags.length > 0 && (
           <div className="mx-auto mt-1.5 flex max-w-[110rem] flex-wrap items-center gap-1.5">
-            <span className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-              Filter by tag
-            </span>
+            <span className="text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-ink-faint">Filter by tag</span>
             {allTags.map(([t, count]) => {
               const on = tagFilter.includes(t);
               return (
                 <button
                   key={t}
-                  onClick={() =>
-                    setTagFilter((f) => (on ? f.filter((x) => x !== t) : [...f, t]))
-                  }
+                  onClick={() => setTagFilter((f) => (on ? f.filter((x) => x !== t) : [...f, t]))}
                   className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold transition-all ${
                     on
                       ? "border-accent bg-accent text-[var(--paper)]"
@@ -611,7 +652,10 @@ export default function DocumentView({
               );
             })}
             {tagFilter.length > 0 && (
-              <button className="text-[0.68rem] font-semibold text-accent-deep underline-offset-2 hover:underline" onClick={() => setTagFilter([])}>
+              <button
+                className="text-[0.68rem] font-semibold text-accent-deep underline-offset-2 hover:underline"
+                onClick={() => setTagFilter([])}
+              >
                 clear
               </button>
             )}
@@ -619,18 +663,11 @@ export default function DocumentView({
         )}
       </header>
 
-      {/* body */}
       <div className="flex min-h-0 flex-1">
         <TocRail
           entries={railEntries}
           activeId={doc.mode === "reflow" || !doc.pages ? activeHeading : `p${activePage}`}
-          progress={
-            doc.mode === "reflow" || !doc.pages
-              ? progress
-              : doc.pages
-                ? activePage / doc.pages.length
-                : 0
-          }
+          progress={doc.mode === "reflow" || !doc.pages ? progress : doc.pages ? activePage / doc.pages.length : 0}
           onJump={jumpRail}
           heading="Reading progress"
           meta={
@@ -640,9 +677,17 @@ export default function DocumentView({
           }
         />
 
-        <main ref={scrollerRef} data-scroller className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden" onScroll={onScroll}>
+        <main
+          ref={scrollerRef}
+          data-scroller
+          className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden"
+          onScroll={onScroll}
+        >
           {needsAttach || (doc.mode === "layout" && !doc.pages) ? (
-            <div className="paper-sheet rise mx-auto mt-12 max-w-md rounded-lg p-7 text-center" style={{ rotate: "-0.4deg" }}>
+            <div
+              className={`paper-sheet rise mx-auto mt-12 max-w-md rounded-lg p-7 text-center ${sheetClass}`}
+              style={{ rotate: "-0.4deg" }}
+            >
               <span className="mx-auto grid h-12 w-12 place-items-center rounded-lg border border-line text-accent">
                 {attaching ? <IconSpin size={22} className="spin-slow" /> : <IconUpload size={22} />}
               </span>
@@ -669,9 +714,7 @@ export default function DocumentView({
                   />
                 </label>
               )}
-              {attaching && (
-                <div className="working-bar mx-auto mt-5 h-2.5 w-3/4 rounded-full" />
-              )}
+              {attaching && <div className="working-bar mx-auto mt-5 h-2.5 w-3/4 rounded-full" />}
             </div>
           ) : (
             <div
@@ -683,7 +726,9 @@ export default function DocumentView({
                   <ReflowCanvas
                     markdown={doc.markdown ?? ""}
                     marks={highlights}
-                    noteForMark={noteForMark}
+                    markTitles={markTitles}
+                    sheetClass={sheetClass}
+                    styleVars={readingStyle}
                     onMarkClick={(id, e) => {
                       setSelPayload(null);
                       setMarkMenu({ id, x: e.clientX, y: e.clientY });
@@ -692,35 +737,38 @@ export default function DocumentView({
                     articleRef={articleRef}
                   />
                 ) : (
-                  <LayoutCanvas
-                    pages={doc.pages}
-                    highlights={highlights}
-                    clean={clean}
-                    onMarkClick={(id, e) => {
-                      setSelPayload(null);
-                      setMarkMenu({ id, x: e.clientX, y: e.clientY });
-                    }}
-                    onSelect={(s) => setSelPayload({ ...s, kind: "page" })}
-                    onPageSeen={setActivePage}
-                    pageNotes={(pageNum) => {
-                      if (clean) return null;
-                      const page = doc.pages?.find((p) => p.pageNum === pageNum);
-                      const list = freeformNotes.filter((n) => (n.page ?? 1) === pageNum);
-                      if (!page || !list.length) return null;
-                      return (
-                        <PageNoteHost
-                          page={page}
-                          notes={list}
-                          snippetFor={snippetFor}
-                          onPatch={patchNote}
-                          onDelete={deleteNote}
-                        />
-                      );
-                    }}
-                  />
+                  <div style={{ maxWidth: layoutMaxW }} className="mx-auto">
+                    <LayoutCanvas
+                      pages={doc.pages}
+                      highlights={highlights}
+                      clean={clean}
+                      markTitles={markTitles}
+                      sheetClass={sheetClass}
+                      onMarkClick={(id, e) => {
+                        setSelPayload(null);
+                        setMarkMenu({ id, x: e.clientX, y: e.clientY });
+                      }}
+                      onSelect={(s) => setSelPayload({ ...s, kind: "page" })}
+                      onPageSeen={setActivePage}
+                      pageNotes={(pageNum) => {
+                        if (clean) return null;
+                        const page = doc.pages?.find((p) => p.pageNum === pageNum);
+                        const list = freeformNotes.filter((n) => (n.page ?? 1) === pageNum);
+                        if (!page || !list.length) return null;
+                        return (
+                          <PageNoteHost
+                            page={page}
+                            notes={list}
+                            snippetFor={snippetFor}
+                            onPatch={patchNote}
+                            onDelete={deleteNote}
+                          />
+                        );
+                      }}
+                    />
+                  </div>
                 )}
 
-                {/* freeform notes over the reflow sheet */}
                 {doc.mode === "reflow" &&
                   !clean &&
                   freeformNotes.map((n) => {
@@ -756,7 +804,6 @@ export default function DocumentView({
                     );
                   })}
 
-                {/* small screens: margin notes flow under the text */}
                 <section className="pa-notes mt-12 md:hidden" aria-label="Margin notes">
                   <h2 className="mb-4 font-display text-lg font-bold text-ink">Marginalia</h2>
                   <div className="flex flex-col gap-6">
@@ -770,14 +817,8 @@ export default function DocumentView({
                 </section>
               </div>
 
-              {/* margin rail */}
               <div className="hidden md:block">
-                <MarginRail
-                  notes={marginNotes}
-                  snippetFor={snippetFor}
-                  onPatch={patchNote}
-                  onDelete={deleteNote}
-                />
+                <MarginRail notes={marginNotes} snippetFor={snippetFor} onPatch={patchNote} onDelete={deleteNote} />
               </div>
 
               <ConnectorLayer
@@ -791,7 +832,6 @@ export default function DocumentView({
         </main>
       </div>
 
-      {/* selection toolbar */}
       {selPayload && !clean && (
         <div
           className="pop fixed z-[70] flex items-center gap-1 rounded-lg border border-line bg-sheet p-1.5 shadow-[0_14px_34px_-12px_rgba(var(--shadow-ink),0.55)]"
@@ -815,42 +855,48 @@ export default function DocumentView({
             </button>
           ))}
           <span className="mx-0.5 h-6 w-px bg-line" aria-hidden="true" />
-          {MARK_COLORS.map((c) => (
-            <button
-              key={c.key}
-              className="h-6 w-6 shrink-0 rounded-full border border-[rgba(var(--shadow-ink),0.35)] transition-transform hover:scale-110 active:scale-95"
-              style={{ background: `var(--hl-${c.key})` }}
-              title={`${c.label} — apply ${tool}`}
-              aria-label={`Apply ${c.label} ${tool}`}
-              onClick={() => applyMark(tool, c.key)}
-            />
-          ))}
+          {palette.map((c) => {
+            const label = settings.highlightLabels[c.key];
+            const tip = label ? `${c.label} — ${label}` : c.label;
+            return (
+              <button
+                key={c.key}
+                className="h-6 w-6 shrink-0 rounded-full border border-[rgba(var(--shadow-ink),0.35)] transition-transform hover:scale-110 active:scale-95"
+                style={{ background: `var(--hl-${c.key})` }}
+                title={`${tip} — apply ${tool}`}
+                aria-label={`Apply ${tip} ${tool}`}
+                onClick={() => applyMark(tool, c.key)}
+              />
+            );
+          })}
           <span className="mx-0.5 h-6 w-px bg-line" aria-hidden="true" />
           <button
             className="flex items-center gap-1.5 rounded-md border border-line px-2 py-1.5 text-xs font-semibold text-ink-soft transition-colors hover:border-ink-faint hover:text-ink"
             onClick={() => attachNote()}
             title="Attach a sticky note — press “N”"
           >
-            <IconNote size={15} className="text-[var(--ink-blue)]" /> Note
+            <IconNote size={15} className="text-[var(--ink-blue-ui)]" /> Note
           </button>
         </div>
       )}
 
-      {/* existing-mark menu */}
       {markMenu && markMenuHl && (
         <>
           <div className="fixed inset-0 z-[65]" onClick={() => setMarkMenu(null)} aria-hidden="true" />
           <div
-            className="pop fixed z-[70] w-60 rounded-lg border border-line bg-sheet p-2.5 shadow-[0_18px_40px_-14px_rgba(var(--shadow-ink),0.55)]"
+            className="pop fixed z-[70] w-64 rounded-lg border border-line bg-sheet p-2.5 shadow-[0_18px_40px_-14px_rgba(var(--shadow-ink),0.55)]"
             style={{
-              left: Math.min(markMenu.x, window.innerWidth - 256),
+              left: Math.min(markMenu.x, window.innerWidth - 272),
               top: Math.min(markMenu.y + 6, window.innerHeight - 240),
             }}
             role="menu"
             aria-label="Mark actions"
           >
             {markMenuHl.anchor.snippet && (
-              <p className="mb-2 line-clamp-2 border-l-2 pl-2 text-[0.7rem] italic leading-snug text-ink-soft" style={{ borderColor: `var(--hl-${markMenuHl.color}-solid)` }}>
+              <p
+                className="mb-2 line-clamp-2 border-l-2 pl-2 text-[0.7rem] italic leading-snug text-ink-soft"
+                style={{ borderColor: `var(--hl-${markMenuHl.color}-solid)` }}
+              >
                 “{markMenuHl.anchor.snippet}”
               </p>
             )}
@@ -866,18 +912,21 @@ export default function DocumentView({
                 </button>
               ))}
               <span className="mx-0.5 h-5 w-px bg-line" aria-hidden="true" />
-              {MARK_COLORS.map((c) => (
-                <button
-                  key={c.key}
-                  className={`h-5 w-5 rounded-full border transition-transform hover:scale-110 ${
-                    markMenuHl.color === c.key ? "border-ink" : "border-[rgba(var(--shadow-ink),0.35)]"
-                  }`}
-                  style={{ background: `var(--hl-${c.key})` }}
-                  title={`Recolor ${c.label.toLowerCase()}`}
-                  aria-label={`Recolor ${c.label}`}
-                  onClick={() => patchMark(markMenuHl.id, { color: c.key })}
-                />
-              ))}
+              {palette.map((c) => {
+                const label = settings.highlightLabels[c.key];
+                return (
+                  <button
+                    key={c.key}
+                    className={`h-5 w-5 rounded-full border transition-transform hover:scale-110 ${
+                      markMenuHl.color === c.key ? "border-ink" : "border-[rgba(var(--shadow-ink),0.35)]"
+                    }`}
+                    style={{ background: `var(--hl-${c.key})` }}
+                    title={label ? `${c.label} — ${label}` : c.label}
+                    aria-label={`Recolor ${c.label}`}
+                    onClick={() => patchMark(markMenuHl.id, { color: c.key })}
+                  />
+                );
+              })}
             </div>
             <div className="mt-2 flex items-center justify-between border-t border-[rgba(var(--shadow-ink),0.12)] pt-2">
               <button
@@ -899,7 +948,7 @@ export default function DocumentView({
                   }
                 }}
               >
-                <IconNote size={14} className="text-[var(--ink-blue)]" />
+                <IconNote size={14} className="text-[var(--ink-blue-ui)]" />
                 {markMenuNote ? "Open note" : "Add note"}
               </button>
               <button

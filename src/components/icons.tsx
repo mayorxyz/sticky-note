@@ -30,6 +30,20 @@ export const IconArrowLeft = make(
   </>
 );
 
+export const IconArrowUp = make(
+  <>
+    <path d="M12 19V5" />
+    <path d="m5 12 7-7 7 7" />
+  </>
+);
+
+export const IconArrowDown = make(
+  <>
+    <path d="M12 5v14" />
+    <path d="m19 12-7 7-7-7" />
+  </>
+);
+
 export const IconUpload = make(
   <>
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -53,9 +67,7 @@ export const IconSun = make(
   </>
 );
 
-export const IconMoon = make(
-  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-);
+export const IconMoon = make(<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />);
 
 export const IconSearch = make(
   <>
@@ -230,14 +242,11 @@ export const IconMove = make(
   </>
 );
 
-export const IconType = make(
+export const IconGear = make(
   <>
-    <path d="M4 7V4h16v3" />
-    <path d="M9 20h6" />
-    <path d="M12 4v16" />
+    <circle cx="12" cy="12" r="3.2" />
+    <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z" />
   </>
 );
 
-export const IconSpin = make(
-  <path d="M21 12a9 9 0 1 1-6.2-8.56" />
-);
+export const IconSpin = make(<path d="M21 12a9 9 0 1 1-6.2-8.56" />);

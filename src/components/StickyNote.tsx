@@ -1,180 +1,164 @@
-import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
-import type { Note, NoteFont, NoteInk, Placement } from "../data/types";
+import { useMemo, type CSSProperties, type KeyboardEvent } from "react";
+import type { Note, NoteFont, NoteInk } from "../data/types";
 import { NOTE_FONTS, NOTE_INKS } from "../data/types";
-import {
-  IconMaximize,
-  IconMove,
-  IconRows,
-  IconTag,
-  IconTrash,
-  IconType,
-  IconX,
-} from "./icons";
+import { IconCheck, IconMaximize, IconMinimize, IconPen, IconTrash } from "./icons";
 
-export function tiltFor(id: string): number {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
-  return ((Math.abs(h) % 1000) / 1000) * 3 - 1.5; // ±1.5°
-}
+const FONT_STACK: Record<NoteFont, string> = {
+  caveat: "var(--font-note-caveat)",
+  kalam: "var(--font-note-kalam)",
+  "patrick-hand": "var(--font-note-patrick)",
+};
+
+const FONT_SIZE: Record<NoteFont, string> = {
+  caveat: "1.32rem",
+  kalam: "1rem",
+  "patrick-hand": "1.06rem",
+};
+
+const INK_COLOR: Record<NoteInk, string> = {
+  blue: "var(--ink-blue)",
+  red: "var(--ink-red)",
+  pencil: "var(--ink-pencil)",
+};
 
 interface Props {
   note: Note;
+  /** snippet of the annotated passage, shown on the collapsed card */
   snippet?: string;
   onPatch: (id: string, patch: Partial<Note>) => void;
   onDelete: (id: string) => void;
 }
 
 export default function StickyNote({ note, snippet, onPatch, onDelete }: Props) {
-  const [tagOpen, setTagOpen] = useState(false);
-  const [tagDraft, setTagDraft] = useState("");
-  const areaRef = useRef<HTMLTextAreaElement>(null);
+  const tilt = useMemo(() => {
+    const h = Array.from(note.id).reduce((a, c) => a + c.charCodeAt(0), 0);
+    return ((h % 31) / 10 - 1.5).toFixed(2);
+  }, [note.id]);
 
-  const fontMeta = NOTE_FONTS.find((f) => f.key === note.font) ?? NOTE_FONTS[0];
-  const inkMeta = NOTE_INKS.find((k) => k.key === note.ink) ?? NOTE_INKS[0];
-  const tilt = tiltFor(note.id);
+  function addTagFromInput(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const v = e.currentTarget.value.trim().replace(/^#/, "");
+    if (!v) return;
+    if (!note.tags.includes(v)) onPatch(note.id, { tags: [...note.tags, v] });
+    e.currentTarget.value = "";
+  }
 
-  useEffect(() => {
-    const el = areaRef.current;
-    if (!el || note.collapsed) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.max(el.scrollHeight, 74)}px`;
-  }, [note.content, note.collapsed, note.font]);
+  const style: CSSProperties = {
+    transform: `rotate(${tilt}deg)`,
+    fontFamily: FONT_STACK[note.font],
+    fontSize: FONT_SIZE[note.font],
+    color: INK_COLOR[note.ink],
+  };
 
-  function cycleFont() {
-    const i = NOTE_FONTS.findIndex((f) => f.key === note.font);
-    const next = NOTE_FONTS[(i + 1) % NOTE_FONTS.length].key as NoteFont;
-    onPatch(note.id, { font: next });
-  }
-  function cycleInk() {
-    const i = NOTE_INKS.findIndex((f) => f.key === note.ink);
-    const next = NOTE_INKS[(i + 1) % NOTE_INKS.length].key as NoteInk;
-    onPatch(note.id, { ink: next });
-  }
-  function togglePlacement() {
-    const next: Placement = note.placement === "margin" ? "freeform" : "margin";
-    onPatch(note.id, { placement: next });
-  }
-  function commitTag() {
-    const t = tagDraft.trim().replace(/^#/, "").toLowerCase().replace(/\s+/g, "-");
-    if (t && !note.tags.includes(t)) onPatch(note.id, { tags: [...note.tags, t] });
-    setTagDraft("");
-  }
-  function onTagKey(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" || e.key === "," || e.key === " ") {
-      e.preventDefault();
-      commitTag();
-    } else if (e.key === "Escape") {
-      setTagOpen(false);
-    }
-  }
+  const toolbar = (
+    <div className="note-toolbar" role="toolbar" aria-label="Note controls">
+      {NOTE_FONTS.map((f) => (
+        <button
+          key={f.key}
+          title={`${f.label} hand`}
+          aria-label={`Font: ${f.label}`}
+          aria-pressed={note.font === f.key}
+          style={{ fontFamily: FONT_STACK[f.key], fontSize: "0.95rem", fontWeight: 700, opacity: note.font === f.key ? 1 : 0.55 }}
+          onClick={() => onPatch(note.id, { font: f.key })}
+        >
+          A
+        </button>
+      ))}
+      {NOTE_INKS.map((i) => (
+        <button
+          key={i.key}
+          title={i.label}
+          aria-label={`Ink: ${i.label}`}
+          aria-pressed={note.ink === i.key}
+          onClick={() => onPatch(note.id, { ink: i.key })}
+        >
+          <span
+            className="block h-2.5 w-2.5 rounded-full border border-[rgba(var(--shadow-ink),0.3)]"
+            style={{ background: INK_COLOR[i.key], outline: note.ink === i.key ? "1.5px solid var(--ink)" : "none", outlineOffset: 1 }}
+          />
+        </button>
+      ))}
+      <button
+        title={note.collapsed ? "Expand note" : "Collapse note"}
+        aria-label={note.collapsed ? "Expand note" : "Collapse note"}
+        onClick={() => onPatch(note.id, { collapsed: !note.collapsed })}
+      >
+        {note.collapsed ? <IconMaximize size={13} /> : <IconMinimize size={13} />}
+      </button>
+      <button title="Tear note off" aria-label="Delete note" onClick={() => onDelete(note.id)}>
+        <IconTrash size={13} />
+      </button>
+    </div>
+  );
 
   return (
     <div
       id={`note-${note.id}`}
       data-note-anchor={note.id}
-      className="pa-note wiggle-hover"
-      style={
-        {
-          fontFamily: fontMeta.css,
-          color: inkMeta.css,
-          "--tilt": `${tilt}deg`,
-          transform: `rotate(${tilt}deg)`,
-        } as CSSProperties
-      }
-      aria-label={
-        note.collapsed
-          ? `Collapsed sticky note${snippet ? ` on “${snippet}”` : ""}`
-          : `Sticky note${snippet ? ` on “${snippet}”` : ""}`
-      }
+      className="pa-note wiggle-hover h-full"
+      style={style}
+      aria-label={`Sticky note${note.tags.length ? ` tagged ${note.tags.map((t) => "#" + t).join(", ")}` : ""}`}
     >
-      <div className="note-toolbar" role="toolbar" aria-label="Note controls">
-        <button onClick={cycleFont} title={`Hand: ${fontMeta.label} — click to cycle`} aria-label="Change handwriting font">
-          <IconType size={13} />
-        </button>
-        <button onClick={cycleInk} title={`Ink: ${inkMeta.label} — click to cycle`} aria-label="Change ink color">
-          <span
-            className="inline-block h-3 w-3 rounded-full border border-[rgba(var(--shadow-ink),0.3)]"
-            style={{ background: inkMeta.css }}
-          />
-        </button>
-        <button
-          onClick={togglePlacement}
-          title={note.placement === "margin" ? "Unpin — place freely" : "Pin to margin rail"}
-          aria-label={note.placement === "margin" ? "Switch to freeform placement" : "Switch to margin placement"}
-        >
-          {note.placement === "margin" ? <IconMove size={13} /> : <IconRows size={13} />}
-        </button>
-        <button onClick={() => setTagOpen((v) => !v)} title="Tags" aria-label="Edit tags" aria-expanded={tagOpen}>
-          <IconTag size={13} />
-        </button>
-        <button
-          onClick={() => onPatch(note.id, { collapsed: !note.collapsed })}
-          title={note.collapsed ? "Expand note" : "Collapse note"}
-          aria-label={note.collapsed ? "Expand note" : "Collapse note"}
-        >
-          {note.collapsed ? <IconMaximize size={13} /> : <span className="text-[13px] leading-none">—</span>}
-        </button>
-        <button onClick={() => onDelete(note.id)} title="Delete note" aria-label="Delete note">
-          <IconTrash size={13} />
-        </button>
-      </div>
+      <span className="fold-corner" aria-hidden="true" />
+      {toolbar}
 
       {note.collapsed ? (
         <button
-          className="flex w-full items-center gap-1.5 text-left text-[1.02em] font-medium"
+          className="w-full cursor-pointer text-left"
           onClick={() => onPatch(note.id, { collapsed: false })}
+          aria-expanded="false"
+          title="Expand note"
         >
-          <IconMaximize size={12} className="shrink-0 opacity-70" />
-          <span className="truncate">
-            {note.content.trim() ? note.content.trim().slice(0, 26) : "(empty note)"}
-            {note.content.trim().length > 26 ? "…" : ""}
+          <span className="block text-[0.72em] font-bold opacity-70">
+            <IconPen size={12} className="mr-1 inline" style={{ verticalAlign: "-2px" }} />
+            {note.tags.slice(0, 3).map((t) => `#${t}`).join(" ") || "note"}
+          </span>
+          <span className="mt-0.5 line-clamp-2 block text-[0.85em] leading-snug opacity-80">
+            {note.content.trim() || snippet || "…"}
           </span>
         </button>
       ) : (
-        <textarea
-          ref={areaRef}
-          className="note-body"
-          style={{ fontSize: note.font === "caveat" ? "1.28em" : "1.02em" }}
-          value={note.content}
-          placeholder="Write in the margin…"
-          aria-label="Note text"
-          onChange={(e) => onPatch(note.id, { content: e.target.value })}
-        />
-      )}
-
-      {(note.tags.length > 0 || tagOpen) && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-1">
-          {note.tags.map((t) => (
-            <span key={t} className="tag-chip">
-              #{t}
-              <button
-                className="ml-0.5 opacity-60 hover:opacity-100"
-                onClick={() => onPatch(note.id, { tags: note.tags.filter((x) => x !== t) })}
-                aria-label={`Remove tag ${t}`}
-              >
-                <IconX size={9} />
-              </button>
-            </span>
-          ))}
-          {tagOpen && (
+        <div className="flex h-full flex-col">
+          <textarea
+            className="note-body flex-1"
+            value={note.content}
+            placeholder="Scribble here… #tags stick"
+            aria-label="Note text"
+            onChange={(e) => onPatch(note.id, { content: e.target.value })}
+          />
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            {note.tags.map((t) => (
+              <span key={t} className="tag-chip" title={`Remove #${t}`}>
+                #{t}
+                <button
+                  className="cursor-pointer opacity-60 hover:opacity-100"
+                  aria-label={`Remove tag ${t}`}
+                  onClick={() => onPatch(note.id, { tags: note.tags.filter((x) => x !== t) })}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
             <input
-              autoFocus
-              value={tagDraft}
-              onChange={(e) => setTagDraft(e.target.value)}
-              onKeyDown={onTagKey}
-              onBlur={() => {
-                commitTag();
-                setTagOpen(false);
-              }}
-              placeholder="#tag ⏎"
-              className="w-16 rounded border border-[rgba(var(--shadow-ink),0.25)] bg-transparent px-1 py-0 font-body text-[0.66rem] outline-none placeholder:opacity-60"
-              aria-label="Add a tag"
+              className="w-14 bg-transparent text-[0.62rem] font-semibold text-inherit outline-none placeholder:opacity-45"
+              style={{ fontFamily: "var(--font-body)" }}
+              placeholder="+ tag"
+              aria-label="Add tag"
+              onKeyDown={addTagFromInput}
             />
+          </div>
+          {snippet && (
+            <p
+              className="mt-1.5 border-t border-dashed border-[rgba(60,50,10,0.3)] pt-1 text-[0.62rem] leading-snug text-[rgba(60,50,10,0.75)]"
+              style={{ fontFamily: "var(--font-body)" }}
+            >
+              <IconCheck size={10} className="mr-0.5 inline" style={{ verticalAlign: "-1px" }} />
+              <span className="line-clamp-2 italic">“{snippet}”</span>
+            </p>
           )}
         </div>
       )}
-
-      <div className="fold-corner" aria-hidden="true" />
     </div>
   );
 }

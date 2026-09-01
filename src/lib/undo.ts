@@ -28,10 +28,6 @@ export function useHistory<T>(initial: T) {
     }));
   }, []);
 
-  const replace = useCallback((value: T) => {
-    setState({ past: [], present: value, future: [] });
-  }, []);
-
   const undo = useCallback(() => {
     setState((s) => {
       if (!s.past.length) return s;
@@ -53,7 +49,6 @@ export function useHistory<T>(initial: T) {
     canUndo: state.past.length > 0,
     canRedo: state.future.length > 0,
     set,
-    replace,
     undo,
     redo,
   };

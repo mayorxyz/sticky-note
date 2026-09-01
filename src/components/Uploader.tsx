@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent } from "react";
+import { useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { AnnotationsState, DocumentRecord, RenderMode } from "../data/types";
 import { EMPTY_ANNOTATIONS } from "../data/types";
 import { ingestPdf } from "../lib/pdf";
@@ -57,9 +57,7 @@ export default function Uploader({ onIngest }: Props) {
         );
       } else {
         if (file.size > MAX_TEXT_BYTES) {
-          throw new Error(
-            `“${file.name}” is ${(file.size / 1048576).toFixed(1)} MB — the limit is 20 MB.`
-          );
+          throw new Error(`“${file.name}” is ${(file.size / 1048576).toFixed(1)} MB — the limit is 20 MB.`);
         }
         const text = await file.text();
         const words = text.split(/\s+/).filter(Boolean).length;
@@ -117,10 +115,7 @@ export default function Uploader({ onIngest }: Props) {
   }
 
   return (
-    <div
-      className="desk-card rise relative rounded-xl p-5 sm:p-7"
-      style={{ "--tilt": "-0.35deg", rotate: "-0.35deg" } as CSSProperties}
-    >
+    <div className="desk-card tilted rise relative rounded-xl p-5 sm:p-7" style={{ rotate: "-0.35deg" }}>
       <input
         ref={inputRef}
         type="file"
@@ -155,7 +150,7 @@ export default function Uploader({ onIngest }: Props) {
                   name: "Reflow text",
                   desc: "Re-typed as a clean flowing document with a table of contents.",
                 },
-              ] as { key: RenderMode; icon: React.ReactNode; name: string; desc: string }[]
+              ] as { key: RenderMode; icon: ReactNode; name: string; desc: string }[]
             ).map((opt) => (
               <button
                 key={opt.key}
@@ -167,12 +162,8 @@ export default function Uploader({ onIngest }: Props) {
                 }`}
                 aria-pressed={mode === opt.key}
               >
-                <span className={`inline-flex ${mode === opt.key ? "text-accent" : "text-ink-faint"}`}>
-                  {opt.icon}
-                </span>
-                <span className="mt-2 block font-display text-base font-semibold text-ink">
-                  {opt.name}
-                </span>
+                <span className={`inline-flex ${mode === opt.key ? "text-accent" : "text-ink-faint"}`}>{opt.icon}</span>
+                <span className="mt-2 block font-display text-base font-semibold text-ink">{opt.name}</span>
                 <span className="mt-0.5 block text-xs leading-relaxed text-ink-soft">{opt.desc}</span>
               </button>
             ))}
@@ -207,9 +198,7 @@ export default function Uploader({ onIngest }: Props) {
                 />
               </div>
             </div>
-            <span className="font-display text-sm font-bold text-ink-soft">
-              {Math.round(frac * 100)}%
-            </span>
+            <span className="font-display text-sm font-bold text-ink-soft">{Math.round(frac * 100)}%</span>
           </div>
           <p className="mt-3 text-xs text-ink-faint">
             Big PDFs take a moment — every page is pressed and dried locally.
@@ -246,9 +235,7 @@ export default function Uploader({ onIngest }: Props) {
               <p className="font-display text-lg font-semibold text-ink">
                 {drag ? "Let go —" : "Drop a paper on the desk"}
               </p>
-              <p className="text-sm text-ink-soft">
-                PDF, .txt, .md or .markdown · up to 20 MB · up to 300 pages
-              </p>
+              <p className="text-sm text-ink-soft">PDF, .txt, .md or .markdown · up to 20 MB · up to 300 pages</p>
             </div>
           </div>
           <span className="btn-ghost pointer-events-none shrink-0">
@@ -262,7 +249,16 @@ export default function Uploader({ onIngest }: Props) {
           role="alert"
           className="pop mt-4 flex items-start gap-2 rounded-lg border border-accent/40 bg-[var(--hl-rose)] px-3 py-2.5 text-sm font-medium text-ink"
         >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="mt-0.5 shrink-0 text-accent-deep">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            className="mt-0.5 shrink-0 text-accent-deep"
+          >
             <circle cx="12" cy="12" r="9" />
             <path d="M12 8v4.5M12 16h.01" />
           </svg>

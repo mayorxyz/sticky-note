@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import type { AnnotationsState, DocumentRecord } from "../data/types";
+import type { AnnotationsState, DocumentRecord, ExportFormat } from "../data/types";
 import { exportAnnotatedPdf } from "../lib/pdf";
 import { downloadBlob, safeFileName } from "../lib/store";
 import { IconChevronDown, IconDownload, IconFile, IconSpin } from "./icons";
@@ -7,12 +7,9 @@ import { IconChevronDown, IconDownload, IconFile, IconSpin } from "./icons";
 interface Props {
   doc: DocumentRecord;
   annotations: AnnotationsState;
+  /** the user's preferred format — surfaced first with a “default” tag */
+  preferred: ExportFormat;
   onToast: (msg: string) => void;
-}
-
-function snippetOf(ann: AnnotationsState, hlId?: string): string | undefined {
-  const h = ann.highlights.find((x) => x.id === hlId);
-  return h && h.anchor.kind === "text" ? h.anchor.snippet : undefined;
 }
 
 function markdownWithAnnotations(doc: DocumentRecord, ann: AnnotationsState): string {
@@ -20,12 +17,13 @@ function markdownWithAnnotations(doc: DocumentRecord, ann: AnnotationsState): st
   if (ann.highlights.length) {
     lines.push("### Marks", "");
     for (const h of ann.highlights) {
-      const snip = h.anchor.kind === "text" ? h.anchor.snippet : undefined;
       const where =
         h.anchor.kind === "text"
           ? `chars ${h.anchor.start}–${h.anchor.end}`
           : `page ${h.anchor.page}`;
-      lines.push(`- **${h.type}** (${h.color}, ${where})${snip ? ` — “${snip}”` : ""}`);
+      lines.push(
+        `- **${h.type}** (${h.color}, ${where})${h.anchor.snippet ? ` — “${h.anchor.snippet}”` : ""}`
+      );
     }
     lines.push("");
   }
@@ -33,7 +31,7 @@ function markdownWithAnnotations(doc: DocumentRecord, ann: AnnotationsState): st
     lines.push("### Sticky notes", "");
     for (const n of ann.notes) {
       const tags = n.tags.length ? ` [${n.tags.map((t) => `#${t}`).join(" ")}]` : "";
-      const src = snippetOf(ann, n.highlightId);
+      const src = ann.highlights.find((h) => h.id === n.highlightId)?.anchor.snippet;
       lines.push(`- *${n.font} · ${n.ink} ink*${tags}${src ? ` — on “${src}”` : ""}`);
       if (n.content.trim()) lines.push(`  > ${n.content.trim().replace(/\n/g, " ")}`);
     }
@@ -42,7 +40,7 @@ function markdownWithAnnotations(doc: DocumentRecord, ann: AnnotationsState): st
   return lines.join("\n") + "\n";
 }
 
-export default function ExportMenu({ doc, annotations, onToast }: Props) {
+export default function ExportMenu({ doc, annotations, preferred, onToast }: Props) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const closeTimer = useRef<number>(0);
@@ -76,17 +74,22 @@ export default function ExportMenu({ doc, annotations, onToast }: Props) {
   }
 
   function exportBackup() {
-    const payload = JSON.stringify(
-      { app: "paper-annotate", version: 1, doc, annotations },
-      null,
-      2
+    const payload = JSON.stringify({ app: "paper-annotate", version: 1, doc, annotations }, null, 2);
+    downloadBlob(
+      new Blob([payload], { type: "application/json" }),
+      `${safeFileName(doc.title)}.paper-annotate.json`
     );
-    downloadBlob(new Blob([payload], { type: "application/json" }), `${safeFileName(doc.title)}.paper-annotate.json`);
     onToast("Backup saved — restore it any time from the library.");
     setOpen(false);
   }
 
-  const items: { key: string; label: string; hint: string; disabled?: boolean; onClick: () => void }[] = [
+  const all: {
+    key: ExportFormat;
+    label: string;
+    hint: string;
+    disabled?: boolean;
+    onClick: () => void;
+  }[] = [
     {
       key: "pdf",
       label: "Annotated PDF",
@@ -95,14 +98,21 @@ export default function ExportMenu({ doc, annotations, onToast }: Props) {
       onClick: () => void exportPdf(),
     },
     {
-      key: "md",
+      key: "markdown",
       label: "Markdown + appendix",
       hint: "Reflow text with every mark and note listed",
       disabled: !doc.markdown,
       onClick: exportMarkdown,
     },
-    { key: "json", label: "Backup (.json)", hint: "Document + all annotations, portable", onClick: exportBackup },
+    {
+      key: "json",
+      label: "Backup (.json)",
+      hint: "Document + all annotations, portable",
+      onClick: exportBackup,
+    },
   ];
+  // preferred format first
+  const items = [...all.filter((i) => i.key === preferred), ...all.filter((i) => i.key !== preferred)];
 
   return (
     <div
@@ -135,7 +145,14 @@ export default function ExportMenu({ doc, annotations, onToast }: Props) {
                 {busy === it.key ? <IconSpin size={16} className="spin-slow" /> : <IconFile size={16} />}
               </span>
               <span>
-                <span className="block text-sm font-semibold text-ink">{it.label}</span>
+                <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+                  {it.label}
+                  {it.key === preferred && (
+                    <span className="rounded-full bg-accent/15 px-1.5 py-px text-[0.58rem] font-bold uppercase tracking-wide text-accent-deep">
+                      default
+                    </span>
+                  )}
+                </span>
                 <span className="block text-[0.68rem] leading-snug text-ink-faint">
                   {it.disabled ? "Needs the layout pages — switch mode first" : it.hint}
                 </span>

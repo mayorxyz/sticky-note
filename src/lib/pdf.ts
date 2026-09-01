@@ -1,17 +1,7 @@
 import { getDocument, GlobalWorkerOptions, Util } from "pdfjs-dist";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import type {
-  AnnotationsState,
-  DocumentRecord,
-  MarkColor,
-  Note,
-  NoteFont,
-  NoteInk,
-  PageData,
-  RenderMode,
-  TextItemF,
-} from "../data/types";
+import type { Highlight, MarkColor, Note, PageData, RectF } from "../data/types";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -69,9 +59,7 @@ async function assertTextLayer(doc: PDFDocumentProxy): Promise<void> {
     for (const it of tc.items) if ("str" in it) chars += it.str.trim().length;
     page.cleanup();
   }
-  if (chars < 40) {
-    throw new PdfNoTextError();
-  }
+  if (chars < 40) throw new PdfNoTextError();
 }
 
 /* ————— Reflow: text extraction → clean Markdown ————— */
@@ -92,127 +80,125 @@ export async function extractMarkdown(
     const page = await doc.getPage(p);
     const vp = page.getViewport({ scale: 1 });
     const tc = await page.getTextContent();
-    type Row = { x: number; y: number; w: number; h: number; str: string; bold: boolean };
-    const rows: Row[] = [];
-    for (const it of tc.items) {
-      if (!("str" in it) || !it.str.trim()) continue;
-      const tx = Util.transform(vp.transform, it.transform);
-      rows.push({
-        x: tx[4],
-        y: tx[5],
-        w: it.width * Math.hypot(tx[0], tx[1]),
-        h: Math.hypot(tx[2], tx[3]),
-        str: it.str,
-        bold: /bold|black|heavy|demi|semibd/i.test(it.fontName ?? ""),
-      });
-    }
-    rows.sort((a, b) => a.y - b.y || a.x - b.x);
 
-    const clusters: Row[][] = [];
-    for (const r of rows) {
-      const last = clusters[clusters.length - 1];
-      if (last && Math.abs(r.y - last[0].y) <= Math.max(2.5, last[0].h * 0.6)) last.push(r);
-      else clusters.push([r]);
+    const lines = new Map<number, Line>();
+    for (const item of tc.items) {
+      if (!("str" in item) || !item.str.trim()) continue;
+      const tr = item.transform;
+      const y = Math.round(vp.height - tr[5]);
+      const h = Math.hypot(tr[2], tr[3]) || Math.abs(tr[0]) * 0.8 || 10;
+      const bucket = nearestBucket(lines, y, Math.max(3, h * 0.55));
+      const fs = Math.hypot(tr[2], tr[3]) || 10;
+      const bold = /bold|black|heavy|semi/i.test(item.fontName);
+      const existing = bucket !== null ? lines.get(bucket) : undefined;
+      if (existing) {
+        existing.text += (needsSpace(existing.text, item.str) ? " " : "") + item.str;
+        existing.bold = existing.bold && bold;
+        existing.h = Math.max(existing.h, h);
+      } else {
+        lines.set(y, { y, h, text: item.str, bold });
+      }
     }
 
-    const lines: Line[] = clusters
-      .map((items) => {
-        items.sort((a, b) => a.x - b.x);
-        let text = "";
-        let prevEnd = -1e9;
-        for (const it of items) {
-          if (text && it.x - prevEnd > Math.max(1.5, it.h * 0.22)) text += " ";
-          text += it.str;
-          prevEnd = it.x + it.w;
-        }
-        const boldCount = items.filter((i) => i.bold).length;
-        return {
-          y: items[0].y,
-          h: items[0].h,
-          text: text.replace(/\s+/g, " ").trim(),
-          bold: boldCount > items.length / 2,
-        };
-      })
-      .filter((l) => l.text && !(l.text.length <= 4 && /^\d+$/.test(l.text)));
+    const sorted = Array.from(lines.values()).sort((a, b) => a.y - b.y);
+    const heights = sorted.map((l) => l.h).sort((a, b) => a - b);
+    const medianH = heights[Math.floor(heights.length / 2)] || 10;
 
-    const sizes = lines.map((l) => l.h).sort((a, b) => a - b);
-    const median = sizes[Math.floor(sizes.length / 2)] ?? 10;
-
+    let prev: Line | null = null;
     let para: string[] = [];
-    let paraSize = 0;
-    let lastY = -1e9;
     const flush = () => {
       if (para.length) {
         out.push(para.join(" "));
+        out.push("");
         para = [];
       }
     };
-    for (const l of lines) {
-      const ratio = l.h / median;
-      const isList = /^[•●▪◦–—-]\s?/.test(l.text);
-      if (ratio > 1.3) {
-        flush();
-        out.push(`# ${l.text}`);
-      } else if (ratio > 1.16) {
-        flush();
-        out.push(`## ${l.text}`);
-      } else if (ratio > 1.06 && l.text.length < 90) {
-        flush();
-        out.push(`### ${l.text}`);
-      } else if (isList) {
-        flush();
-        out.push(`- ${l.text.replace(/^[•●▪◦–—-]\s?/, "")}`);
+    for (const line of sorted) {
+      let text = line.text.replace(/\s+/g, " ").trim();
+      if (line.bold && line.h > medianH * 1.25 && text.length < 90) text = `## ${text}`;
+      if (!prev) {
+        para.push(text);
       } else {
-        if (para.length && (Math.abs(l.h - paraSize) > 1 || l.y - lastY > l.h * 2.1)) flush();
-        if (!para.length) paraSize = l.h;
-        para.push(l.bold ? `**${l.text}**` : l.text);
+        const gap = line.y - prev.y;
+        const newPara = gap > Math.max(prev.h, line.h) * 1.6 || /^## /.test(text);
+        if (newPara) flush();
+        para.push(text);
       }
-      lastY = l.y;
+      prev = line;
     }
     flush();
-    out.push("");
     page.cleanup();
     onProgress?.(p, doc.numPages);
   }
-  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim() + "\n";
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/* ————— Layout: render every page to a JPEG + normalized text items ————— */
+function nearestBucket(lines: Map<number, Line>, y: number, tol: number): number | null {
+  let best: number | null = null;
+  let bestD = tol;
+  for (const key of lines.keys()) {
+    const d = Math.abs(key - y);
+    if (d < bestD) {
+      bestD = d;
+      best = key;
+    }
+  }
+  return best;
+}
+
+function needsSpace(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const last = a[a.length - 1];
+  const first = b[0];
+  if (/[\s\-—–(/[]$/.test(last)) return false;
+  if (/^[,.:;!?)\]%"'”’]/.test(first)) return false;
+  if (/[。、，！？；：）】」』]$/.test(last) || /^[。、，！？；：（【「『]/.test(first)) return false;
+  return true;
+}
+
+/* ————— Layout: page rendering ————— */
 
 export async function renderPages(
   doc: PDFDocumentProxy,
-  onProgress?: (done: number, total: number) => void
+  onProgress?: (done: number, total: number) => void,
+  scale = 1.5
 ): Promise<PageData[]> {
   const pages: PageData[] = [];
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);
-    const base = page.getViewport({ scale: 1 });
-    const scale = Math.min(2, Math.max(0.75, 1250 / base.width));
     const vp = page.getViewport({ scale });
     const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(vp.width);
-    canvas.height = Math.ceil(vp.height);
+    canvas.width = Math.floor(vp.width);
+    canvas.height = Math.floor(vp.height);
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("Canvas 2D is unavailable in this browser.");
     await page.render({ canvas, canvasContext: ctx, viewport: vp }).promise;
-    const imageUrl = canvas.toDataURL("image/jpeg", 0.82);
 
     const tc = await page.getTextContent();
-    const textItems: TextItemF[] = [];
-    for (const it of tc.items) {
-      if (!("str" in it) || !it.str.trim()) continue;
-      const tx = Util.transform(base.transform, it.transform);
-      const h = Math.hypot(tx[2], tx[3]);
-      const w = it.width * Math.hypot(tx[0], tx[1]);
-      textItems.push({
-        str: it.str,
-        x: Math.min(1, Math.max(0, tx[4] / base.width)),
-        y: Math.min(1, Math.max(0, tx[5] / base.height)),
-        w: Math.min(1, w / base.width),
-        h: Math.min(1, h / base.height),
-      });
-    }
-    pages.push({ pageNum: p, imageUrl, textItems, w: canvas.width, h: canvas.height });
+    const textItems = tc.items.flatMap((item) => {
+      if (!("str" in item) || !item.str.trim()) return [];
+      const r = Util.normalizeRect(Util.applyTransform(item.transform, vp));
+      const w = r[2] - r[0];
+      const h = r[3] - r[1];
+      if (w <= 0 || h <= 0) return [];
+      return [
+        {
+          str: item.str,
+          x: r[0] / vp.width,
+          y: r[1] / vp.height,
+          w: w / vp.width,
+          h: h / vp.height,
+        },
+      ];
+    });
+
+    pages.push({
+      pageNum: p,
+      imageUrl: canvas.toDataURL("image/jpeg", 0.85),
+      textItems,
+      w: canvas.width,
+      h: canvas.height,
+    });
     canvas.width = 0;
     canvas.height = 0;
     page.cleanup();
@@ -221,272 +207,261 @@ export async function renderPages(
   return pages;
 }
 
-export function loadImage(src: string): Promise<HTMLImageElement> {
+export async function makeThumb(imageUrl: string, maxW = 420): Promise<string> {
+  const img = await loadImage(imageUrl);
+  const s = Math.min(1, maxW / img.width);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(img.width * s);
+  canvas.height = Math.round(img.height * s);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return imageUrl;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.72);
+}
+
+function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Image failed to load"));
+    img.onerror = () => reject(new Error("Could not decode the rendered page."));
     img.src = src;
   });
 }
 
-export async function makeThumb(imageUrl: string): Promise<string> {
-  const img = await loadImage(imageUrl);
-  const w = 280;
-  const h = Math.round((img.naturalHeight / img.naturalWidth) * w);
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return imageUrl;
-  ctx.drawImage(img, 0, 0, w, h);
-  return canvas.toDataURL("image/jpeg", 0.72);
-}
+/* ————— Ingest ————— */
 
-/** Full ingest: always extract Markdown; render pages only for layout mode. */
 export async function ingestPdf(
   file: File,
-  mode: RenderMode,
+  mode: "reflow" | "layout",
   onProgress?: (label: string, frac: number) => void
 ): Promise<{ markdown: string; pages?: PageData[]; thumb?: string; numPages: number }> {
   const opened = await openPdf(file);
   const { doc } = opened;
   try {
-    onProgress?.("Extracting text…", 0.04);
+    onProgress?.("Lifting the text layer…", 0.02);
     const markdown = await extractMarkdown(doc, (d, t) =>
-      onProgress?.(`Extracting text — page ${d} of ${t}`, 0.04 + 0.36 * (d / t))
+      onProgress?.(`Reading the type — page ${d} of ${t}`, 0.02 + 0.4 * (d / t))
     );
     let pages: PageData[] | undefined;
     let thumb: string | undefined;
     if (mode === "layout") {
       pages = await renderPages(doc, (d, t) =>
-        onProgress?.(`Rendering pages — ${d} of ${t}`, 0.42 + 0.53 * (d / t))
+        onProgress?.(`Pressing pages — ${d} of ${t}`, 0.44 + 0.52 * (d / t))
       );
-      onProgress?.("Drying the ink…", 0.97);
+      onProgress?.("Drying the ink…", 0.98);
       thumb = await makeThumb(pages[0].imageUrl);
     }
+    onProgress?.("Done", 1);
     return { markdown, pages, thumb, numPages: opened.numPages };
   } finally {
     await opened.destroy();
   }
 }
 
-/* ————— Flattened annotated-PDF export (no pdf-lib needed) ————— */
+/* ————— Flattened annotated PDF export (hand-rolled writer) —————
+ * Emits one JPEG XObject per source page, bakes highlight/underline/strike
+ * rects underneath the image and draws sticky-note boxes in a base-14 font on
+ * top. No compression, classic xref — deliberately boring and robust.
+ */
 
-const HL_FILL: Record<MarkColor, string> = {
-  sun: "rgba(241,199,60,0.5)",
-  rose: "rgba(238,116,154,0.46)",
-  moss: "rgba(112,187,122,0.5)",
-  sky: "rgba(94,168,231,0.46)",
-  amber: "rgba(243,158,58,0.5)",
+const HL_RGB: Record<MarkColor, [number, number, number]> = {
+  sun: [0.98, 0.83, 0.28],
+  rose: [0.96, 0.55, 0.68],
+  moss: [0.45, 0.78, 0.5],
+  sky: [0.47, 0.72, 0.95],
+  amber: [0.98, 0.68, 0.28],
+  violet: [0.7, 0.55, 0.93],
+  teal: [0.3, 0.75, 0.7],
+  graphite: [0.55, 0.55, 0.6],
+  coral: [0.97, 0.55, 0.42],
 };
-const HL_SOLID: Record<MarkColor, string> = {
-  sun: "#c79a10",
-  rose: "#c2416b",
-  moss: "#2f7d46",
-  sky: "#22649e",
-  amber: "#b05e0a",
-};
-const NOTE_FAMILIES: Record<NoteFont, string> = {
-  caveat: "Caveat",
-  kalam: "Kalam",
-  "patrick-hand": "Patrick Hand",
-};
-const INK_HEX: Record<NoteInk, string> = { blue: "#27439e", red: "#b02a2a", pencil: "#57534a" };
 
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-  const words = text.split(/\s+/).filter(Boolean);
+function b64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function pdfEscape(s: string): string {
+  return s
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/[^\x20-\x7e]/g, "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function dataUrlToBytes(url: string): Uint8Array<ArrayBuffer> {
+  return b64ToBytes(url.slice(url.indexOf(",") + 1));
+}
+
+function wrapLines(text: string, width: number): string[] {
+  const words = text.replace(/\s+/g, " ").trim().split(" ");
   const lines: string[] = [];
-  let line = "";
+  let cur = "";
   for (const w of words) {
-    const probe = line ? `${line} ${w}` : w;
-    if (ctx.measureText(probe).width > maxWidth && line) {
-      lines.push(line);
-      line = w;
-    } else line = probe;
+    const trial = cur ? `${cur} ${w}` : w;
+    if (trial.length > width && cur) {
+      lines.push(cur);
+      cur = w;
+    } else {
+      cur = trial;
+    }
   }
-  if (line) lines.push(line);
-  return lines;
+  if (cur) lines.push(cur);
+  return lines.length ? lines : [""];
+}
+
+function buildPdfFromJpegs(
+  items: { jpeg: Uint8Array<ArrayBuffer>; w: number; h: number }[]
+): Uint8Array<ArrayBuffer> {
+  const enc = new TextEncoder();
+  const chunks: (Uint8Array<ArrayBuffer> | Uint8Array<ArrayBufferLike>)[] = [];
+  const offsets: number[] = [];
+  let pos = 0;
+  const pushStr = (s: string) => {
+    const b = enc.encode(s);
+    chunks.push(b);
+    pos += b.length;
+  };
+  const pushBin = (b: Uint8Array<ArrayBuffer>) => {
+    chunks.push(b);
+    pos += b.length;
+  };
+  const obj = (n: number, body: string) => {
+    offsets[n] = pos;
+    pushStr(`${n} 0 obj\n${body}\nendobj\n`);
+  };
+
+  const n = items.length;
+  const fontObj = 3 + 2 * n;
+  const pagesObj = 2;
+  const kids = items.map((_, i) => `${4 + 2 * i} 0 R`).join(" ");
+
+  pushStr("%PDF-1.4\n%\u00e2\u00e3\u00cf\u00d3\n");
+  obj(1, `<< /Type /Catalog /Pages ${pagesObj} 0 R >>`);
+  obj(2, `<< /Type /Pages /Kids [${kids}] /Count ${n} >>`);
+  items.forEach((it, i) => {
+    const pageN = 4 + 2 * i;
+    const imgN = 5 + 2 * i;
+    obj(
+      pageN,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${it.w} ${it.h}] /Resources << /XObject << /Im${i} ${imgN} 0 R >> /Font << /F1 ${fontObj} 0 R >> >> /Contents ${pageN + 1} 0 R >>`
+    );
+    const stream = `q ${it.w} 0 0 ${it.h} 0 0 cm /Im${i} Do Q`;
+    obj(pageN + 1, `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
+    offsets[imgN] = pos;
+    pushStr(
+      `${imgN} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${it.w} /Height ${it.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${it.jpeg.length} >>\nstream\n`
+    );
+    pushBin(it.jpeg);
+    pushStr("\nendstream\nendobj\n");
+  });
+  obj(fontObj, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>");
+
+  const xrefPos = pos;
+  const total = fontObj + 1;
+  let xref = `xref\n0 ${total}\n0000000000 65535 f \n`;
+  for (let i = 1; i < total; i++) {
+    xref += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  }
+  xref += `trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF`;
+  pushStr(xref);
+
+  const out = new Uint8Array(pos);
+  let o = 0;
+  for (const c of chunks) {
+    out.set(c, o);
+    o += c.length;
+  }
+  return out;
 }
 
 export async function exportAnnotatedPdf(
-  doc: DocumentRecord,
-  ann: AnnotationsState
+  doc: { title: string; pages?: PageData[] },
+  ann: { highlights: Highlight[]; notes: Note[] }
 ): Promise<Blob> {
-  if (!doc.pages?.length) throw new Error("This document has no rendered pages.");
-  await document.fonts.ready.catch(() => undefined);
-
-  const rendered: { jpeg: Uint8Array; w: number; h: number }[] = [];
-  for (const page of doc.pages) {
-    const img = await loadImage(page.imageUrl);
+  if (!doc.pages?.length) {
+    throw new Error("Layout pages are needed for a flattened PDF export.");
+  }
+  const items: { jpeg: Uint8Array<ArrayBuffer>; w: number; h: number }[] = [];
+  for (const p of doc.pages) {
+    const img = await loadImage(p.imageUrl);
     const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
+    canvas.width = img.width;
+    canvas.height = img.height;
     const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas 2D is unavailable.");
+    if (!ctx) throw new Error("Canvas 2D is unavailable in this browser.");
     ctx.drawImage(img, 0, 0);
-    const W = canvas.width;
-    const H = canvas.height;
 
-    for (const hl of ann.highlights) {
-      if (hl.anchor.kind !== "page" || hl.anchor.page !== page.pageNum) continue;
-      for (const r of hl.anchor.rects) {
-        const x = r.x * W;
-        const y = r.y * H;
-        const w = r.w * W;
-        const h = r.h * H;
-        if (hl.type === "highlight") {
-          ctx.fillStyle = HL_FILL[hl.color];
-          ctx.fillRect(x, y, w, h);
+    for (const h of ann.highlights) {
+      if (h.anchor.kind !== "page" || h.anchor.page !== p.pageNum) continue;
+      const [r, g, b] = HL_RGB[h.color] ?? HL_RGB.sun;
+      for (const rect of h.anchor.rects) {
+        const x = rect.x * canvas.width;
+        const y = rect.y * canvas.height;
+        const w = rect.w * canvas.width;
+        const hh = rect.h * canvas.height;
+        if (h.type === "highlight") {
+          ctx.globalAlpha = 0.55;
+          ctx.fillStyle = `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
+          ctx.fillRect(x, y, w, hh);
+          ctx.globalAlpha = 1;
         } else {
-          ctx.strokeStyle = HL_SOLID[hl.color];
-          ctx.lineWidth = Math.max(2, h * 0.09);
-          ctx.lineCap = "round";
-          const yy = hl.type === "underline" ? y + h - 1 : y + h * 0.55;
-          ctx.beginPath();
-          ctx.moveTo(x, yy);
-          ctx.lineTo(x + w, yy);
-          ctx.stroke();
+          ctx.fillStyle = `rgb(${Math.round(r * 200)}, ${Math.round(g * 200)}, ${Math.round(b * 200)})`;
+          const t = Math.max(2, hh * 0.13);
+          if (h.type === "underline") ctx.fillRect(x, y + hh - t, w, t);
+          else ctx.fillRect(x, y + hh * 0.45, w, t);
         }
       }
     }
 
-    const notes = ann.notes.filter((nt) =>
-      nt.placement === "freeform"
-        ? nt.page === page.pageNum
-        : ann.highlights.some(
-            (h) => h.id === nt.highlightId && h.anchor.kind === "page" && h.anchor.page === page.pageNum
-          )
-    );
-    for (const nt of notes) {
-      drawNoteOnCanvas(ctx, nt, ann, W, H);
-    }
-
-    const url = canvas.toDataURL("image/jpeg", 0.86);
-    const bin = atob(url.split(",")[1]);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    rendered.push({ jpeg: bytes, w: W, h: H });
-  }
-  const pdf = buildPdfFromJpegs(rendered);
-  return new Blob([pdf], { type: "application/pdf" });
-}
-
-function drawNoteOnCanvas(
-  ctx: CanvasRenderingContext2D,
-  nt: Note,
-  ann: AnnotationsState,
-  W: number,
-  H: number
-): void {
-  const fontSize = Math.max(15, W * 0.021);
-  ctx.font = `500 ${fontSize}px "${NOTE_FAMILIES[nt.font]}", cursive`;
-  const padX = fontSize * 0.55;
-  const boxW = Math.min(W * 0.26, 340);
-  const text = nt.content || "(empty note)";
-  const lines = wrapText(ctx, text, boxW - padX * 2).slice(0, 8);
-  const boxH = lines.length * fontSize * 1.22 + padX * 1.6;
-
-  let x: number;
-  let y: number;
-  if (nt.placement === "freeform" && "x" in nt.position) {
-    x = nt.position.x * W;
-    y = nt.position.y * H;
-  } else {
-    const hl = ann.highlights.find((h) => h.id === nt.highlightId);
-    const r =
-      hl && hl.anchor.kind === "page" && hl.anchor.rects.length
-        ? hl.anchor.rects[0]
-        : { x: 0.62, y: 0.06, w: 0, h: 0 };
-    x = (r.x + r.w + 0.015) * W;
-    if (x + boxW > W * 0.985) x = Math.max(W * 0.01, r.x * W - boxW - W * 0.01);
-    y = r.y * H - boxH / 2;
-    y = Math.max(H * 0.008, Math.min(H - boxH - H * 0.008, y));
-  }
-  x = Math.max(4, Math.min(W - boxW - 4, x));
-
-  ctx.save();
-  ctx.translate(x + boxW / 2, y + boxH / 2);
-  ctx.rotate(-0.015 + (nt.id.length % 5) * 0.008);
-  ctx.translate(-boxW / 2, -boxH / 2);
-  ctx.shadowColor = "rgba(30,25,15,0.35)";
-  ctx.shadowBlur = 8;
-  ctx.shadowOffsetY = 3;
-  ctx.fillStyle = "#fdf6a9";
-  ctx.fillRect(0, 0, boxW, boxH);
-  ctx.shadowColor = "transparent";
-  ctx.fillStyle = "rgba(30,25,15,0.14)";
-  ctx.beginPath();
-  ctx.moveTo(boxW - 16, boxH);
-  ctx.lineTo(boxW, boxH - 16);
-  ctx.lineTo(boxW, boxH);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = INK_HEX[nt.ink];
-  ctx.textBaseline = "top";
-  lines.forEach((ln, i) => ctx.fillText(ln, padX, padX * 0.8 + i * fontSize * 1.22));
-  ctx.restore();
-}
-
-function buildPdfFromJpegs(
-  items: { jpeg: Uint8Array; w: number; h: number }[]
-): Uint8Array<ArrayBuffer> {
-  const chunks: Uint8Array[] = [];
-  let offset = 0;
-  const push = (data: string | Uint8Array) => {
-    const b = typeof data === "string" ? new TextEncoder().encode(data) : data;
-    chunks.push(b);
-    offset += b.length;
-  };
-  const n = items.length;
-  const offsets: number[] = [];
-  const obj = (body: () => void) => {
-    offsets.push(offset);
-    body();
-  };
-
-  push("%PDF-1.4\n%âãÏÓ\n");
-
-  obj(() => push(`1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`));
-  const kids = items.map((_, i) => `${3 + i * 3} 0 R`).join(" ");
-  obj(() => push(`2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${n} >>\nendobj\n`));
-
-  items.forEach((item, i) => {
-    const pageId = 3 + i * 3;
-    const imgId = 4 + i * 3;
-    const contentId = 5 + i * 3;
-    const stream = `q ${item.w} 0 0 ${item.h} 0 0 cm /Im${i} Do Q`;
-    obj(() =>
-      push(
-        `${pageId} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${item.w} ${item.h}] /Resources << /XObject << /Im${i} ${imgId} 0 R >> /ProcSet [/PDF /ImageC] >> /Contents ${contentId} 0 R >>\nendobj\n`
-      )
-    );
-    obj(() => {
-      push(
-        `${imgId} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${item.w} /Height ${item.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${item.jpeg.length} >>\nstream\n`
-      );
-      push(item.jpeg);
-      push(`\nendstream\nendobj\n`);
+    const notes = ann.notes.filter((nt) => nt.page === p.pageNum || (!nt.page && p.pageNum === 1));
+    notes.forEach((nt, i) => {
+      const pos = nt.position as { x?: number; y?: number; w?: number };
+      const fx = typeof pos.x === "number" ? pos.x : 0.62;
+      const fy = typeof pos.y === "number" ? pos.y : 0.08 + i * 0.16;
+      const bw = (pos.w ?? 0.3) * canvas.width;
+      const text = nt.content.trim() || "(empty note)";
+      const lines = wrapLines(text, Math.max(10, Math.floor(bw / 9)));
+      const fs = Math.max(12, canvas.width * 0.021);
+      const bh = lines.length * fs * 1.35 + fs * 1.4;
+      const bx = Math.min(fx * canvas.width, canvas.width - bw - 6);
+      const by = Math.min(fy * canvas.height, canvas.height - bh - 6);
+      ctx.save();
+      ctx.shadowColor = "rgba(0,0,0,0.35)";
+      ctx.shadowBlur = fs * 0.7;
+      ctx.shadowOffsetY = fs * 0.25;
+      ctx.fillStyle = "#fdf6a9";
+      ctx.fillRect(bx, by, bw, bh);
+      ctx.restore();
+      ctx.fillStyle = nt.ink === "red" ? "#b02a2a" : nt.ink === "blue" ? "#27439e" : "#57534a";
+      ctx.font = `${fs}px Helvetica, Arial, sans-serif`;
+      lines.forEach((ln, j) => {
+        ctx.fillText(pdfEscapePlain(ln), bx + fs * 0.6, by + fs * 1.5 + j * fs * 1.35);
+      });
     });
-    obj(() =>
-      push(
-        `${contentId} 0 obj\n<< /Length ${stream.length} >>\nstream\n${stream}\nendstream\nendobj\n`
-      )
+
+    const blob: Blob = await new Promise((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("JPEG encoding failed."))), "image/jpeg", 0.88)
     );
-  });
-
-  const xrefAt = offset;
-  const total = 2 + n * 3 + 1;
-  let xref = `xref\n0 ${total}\n0000000000 65535 f \n`;
-  for (const off of offsets) xref += `${String(off).padStart(10, "0")} 00000 n \n`;
-  push(xref);
-  push(`trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF`);
-
-  const out = new Uint8Array(offset);
-  let pos = 0;
-  for (const c of chunks) {
-    out.set(c, pos);
-    pos += c.length;
+    items.push({
+      jpeg: new Uint8Array(await blob.arrayBuffer()),
+      w: Math.round(img.width * 0.75),
+      h: Math.round(img.height * 0.75),
+    });
+    canvas.width = 0;
+    canvas.height = 0;
   }
-  return out;
+  const bytes = buildPdfFromJpegs(items);
+  return new Blob([bytes], { type: "application/pdf" });
 }
+
+function pdfEscapePlain(s: string): string {
+  return s.replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/[^\x20-\x7e]/g, "");
+}
+
+export { pdfEscape };
