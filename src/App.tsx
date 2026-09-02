@@ -1,248 +1,408 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AnnotationsState, DocumentRecord, Settings, StoredData } from "./data/types";
-import { EMPTY_ANNOTATIONS, sheetClass } from "./data/types";
+import { HashRouter, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import type {
+  AnnotationsState,
+  Bookmark,
+  DocumentRecord,
+  Settings,
+  StoredData,
+} from "./data/types";
+import { EMPTY_ANNOTATIONS } from "./data/types";
 import {
-  DEFAULT_SETTINGS,
   downloadBlob,
   loadData,
   saveData,
   storageBytes,
   uid,
 } from "./lib/store";
-import { SAMPLE_MARKDOWN, SAMPLE_TITLE } from "./data/sampleDoc";
-import Library from "./components/Library";
+import Library, { type BackupPayload } from "./components/Library";
 import DocumentView from "./components/DocumentView";
 import SettingsPage from "./components/Settings";
+import { SAMPLE_MARKDOWN, SAMPLE_TITLE } from "./data/sampleDoc";
 
-type View = { kind: "library" } | { kind: "doc"; id: string } | { kind: "settings" };
+interface Toast {
+  id: string;
+  msg: string;
+}
 
 export default function App() {
   const [data, setData] = useState<StoredData>(() => loadData());
-  const [view, setView] = useState<View>({ kind: "library" });
-  const [settingsFrom, setSettingsFrom] = useState<View>({ kind: "library" });
-  const [toast, setToast] = useState<string | null>(null);
-  const [osDark, setOsDark] = useState(
+  const [storeError, setStoreError] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [sysDark, setSysDark] = useState(
     () => window.matchMedia("(prefers-color-scheme: dark)").matches
   );
-  const toastTimer = useRef(0);
+  const firstRun = useRef(true);
 
-  const settings: Settings = data.settings ?? DEFAULT_SETTINGS;
+  const settings = data.settings;
 
-  /* ————— persist everything through the single versioned key ————— */
+  /* ————— persistence ————— */
   useEffect(() => {
-    const err = saveData({
-      ...data,
-      theme: settings.theme === "dark" ? "dark" : settings.theme === "light" ? "light" : undefined,
-    });
-    if (err) showToast(err);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    setStoreError(saveData(data));
   }, [data]);
 
-  function showToast(msg: string) {
-    setToast(msg);
-    window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 4200);
-  }
-
-  /* ————— theme resolution: system → light|dark only; black is explicit ————— */
   useEffect(() => {
-    if (settings.theme !== "system") return;
+    if (!storeError) return;
+    const id = uid();
+    setToasts((t) => [...t.slice(-2), { id, msg: storeError }]);
+    const h = window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 7000);
+    return () => window.clearTimeout(h);
+  }, [storeError]);
+
+  /* ————— theme: light / dark / black / system ————— */
+  useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const fn = (e: MediaQueryListEvent) => setOsDark(e.matches);
+    const fn = () => setSysDark(mq.matches);
     mq.addEventListener("change", fn);
     return () => mq.removeEventListener("change", fn);
-  }, [settings.theme]);
+  }, []);
 
   const resolvedTheme: "light" | "dark" | "black" =
-    settings.theme === "system" ? (osDark ? "dark" : "light") : settings.theme;
+    settings.theme === "system" ? (sysDark ? "dark" : "light") : settings.theme;
 
   useEffect(() => {
-    const root = document.documentElement;
-    root.classList.toggle("dark", resolvedTheme === "dark");
-    root.classList.toggle("black", resolvedTheme === "black");
-    root.classList.toggle("reduce-motion", settings.reduceMotion);
-    root.setAttribute("data-theme", resolvedTheme);
+    const el = document.documentElement;
+    el.classList.toggle("dark", resolvedTheme === "dark");
+    el.classList.toggle("black", resolvedTheme === "black");
+    el.classList.toggle("reduce-motion", settings.reduceMotion);
+    el.setAttribute("data-theme", resolvedTheme);
   }, [resolvedTheme, settings.reduceMotion]);
 
-  const styleCls = useMemo(() => sheetClass(settings.paperStyle), [settings.paperStyle]);
+  const toggleTheme = useCallback(() => {
+    setData((d) => ({
+      ...d,
+      settings: { ...d.settings, theme: resolvedTheme === "light" ? "dark" : "light" },
+    }));
+  }, [resolvedTheme]);
 
-  /* ————— document handlers ————— */
+  const patchSettings = useCallback((patch: Partial<Settings>) => {
+    setData((d) => ({ ...d, settings: { ...d.settings, ...patch } }));
+  }, []);
+
+  /* ————— toasts ————— */
+  const toast = useCallback((msg: string) => {
+    const id = uid();
+    setToasts((t) => [...t.slice(-2), { id, msg }]);
+    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3600);
+  }, []);
+
+  /* ————— doc / annotation mutations ————— */
   const ingest = useCallback((doc: DocumentRecord, ann: AnnotationsState) => {
     setData((d) => ({
       ...d,
       docs: [doc, ...d.docs],
       annotations: { ...d.annotations, [doc.id]: ann },
     }));
-    setView({ kind: "doc", id: doc.id });
   }, []);
-
-  const ingestMany = useCallback(
-    (docs: DocumentRecord[], annotations: Record<string, AnnotationsState>) => {
-      setData((d) => {
-        const existing = new Set(d.docs.map((x) => x.id));
-        const remap = new Map<string, string>();
-        const newDocs = docs.map((doc) => {
-          const id = existing.has(doc.id) ? uid() : doc.id;
-          remap.set(doc.id, id);
-          return { ...doc, id };
-        });
-        const ann: Record<string, AnnotationsState> = {};
-        for (const [oldId, a] of Object.entries(annotations)) {
-          const nid = remap.get(oldId);
-          if (!nid) continue;
-          ann[nid] = {
-            highlights: (a.highlights ?? []).map((h) => ({ ...h, docId: nid })),
-            notes: (a.notes ?? []).map((n) => ({ ...n, docId: nid })),
-          };
-        }
-        return {
-          ...d,
-          docs: [...newDocs, ...d.docs],
-          annotations: { ...d.annotations, ...ann },
-        };
-      });
-      showToast(`Restored ${docs.length} document${docs.length === 1 ? "" : "s"} from backup.`);
-    },
-    []
-  );
 
   const updateDoc = useCallback((doc: DocumentRecord) => {
     setData((d) => ({ ...d, docs: d.docs.map((x) => (x.id === doc.id ? doc : x)) }));
   }, []);
 
-  const deleteDoc = useCallback((id: string) => {
-    setData((d) => {
-      const annotations = { ...d.annotations };
-      delete annotations[id];
-      return { ...d, docs: d.docs.filter((x) => x.id !== id), annotations };
-    });
-    showToast("Torn up and gone.");
-  }, []);
+  const deleteDoc = useCallback(
+    (id: string) => {
+      const title = data.docs.find((d) => d.id === id)?.title ?? "paper";
+      setData((d) => {
+        const annotations = { ...d.annotations };
+        delete annotations[id];
+        return {
+          ...d,
+          docs: d.docs.filter((x) => x.id !== id),
+          annotations,
+          bookmarks: d.bookmarks.filter((b) => b.docId !== id),
+        };
+      });
+      toast(`“${title}” torn up.`);
+    },
+    [data.docs, toast]
+  );
 
-  const annotationsChange = useCallback((docId: string, ann: AnnotationsState) => {
+  const setAnnotations = useCallback((docId: string, ann: AnnotationsState) => {
     setData((d) => ({ ...d, annotations: { ...d.annotations, [docId]: ann } }));
   }, []);
 
-  const patchSettings = useCallback((patch: Partial<Settings>) => {
-    setData((d) => ({ ...d, settings: { ...(d.settings ?? DEFAULT_SETTINGS), ...patch } }));
+  const addBookmark = useCallback((bm: Bookmark) => {
+    setData((d) => ({ ...d, bookmarks: [...d.bookmarks, bm] }));
   }, []);
 
-  function toggleThemeQuick() {
-    patchSettings({ theme: resolvedTheme === "light" ? "dark" : "light" });
-  }
+  const deleteBookmark = useCallback(
+    (id: string) => {
+      setData((d) => ({ ...d, bookmarks: d.bookmarks.filter((b) => b.id !== id) }));
+      toast("Bookmark removed.");
+    },
+    [toast]
+  );
 
-  function addSample() {
-    ingest(
-      {
-        id: uid(),
-        title: SAMPLE_TITLE,
-        sourceType: "text",
-        mode: "reflow",
-        markdown: SAMPLE_MARKDOWN,
-        createdAt: new Date().toISOString(),
-        words: SAMPLE_MARKDOWN.split(/\s+/).filter(Boolean).length,
-      },
-      { ...EMPTY_ANNOTATIONS }
-    );
-  }
+  /* ————— backups ————— */
+  const importBackup = useCallback(
+    (payload: BackupPayload) => {
+      const idMap = new Map<string, string>();
+      let created = 0;
+      setData((d) => {
+        const existing = new Set(d.docs.map((x) => x.id));
+        const docs = payload.docs.map((doc) => {
+          let id = doc.id;
+          if (existing.has(id)) {
+            id = uid();
+            created++;
+          }
+          idMap.set(doc.id, id);
+          existing.add(id);
+          return { ...doc, id };
+        });
+        const annotations = { ...d.annotations };
+        for (const [oldId, ann] of Object.entries(payload.annotations)) {
+          const newId = idMap.get(oldId) ?? oldId;
+          annotations[newId] = ann;
+        }
+        const bookmarks = [...d.bookmarks];
+        for (const bm of payload.bookmarks ?? []) {
+          const newId = idMap.get(bm.docId) ?? bm.docId;
+          if (docs.some((x) => x.id === newId)) bookmarks.push({ ...bm, id: uid(), docId: newId });
+        }
+        return { ...d, docs: [...docs, ...d.docs], annotations, bookmarks };
+      });
+      const count = payload.docs.length;
+      toast(
+        count === 1
+          ? "Paper restored to the desk."
+          : `${count} papers restored${created ? ` (${created} renamed to avoid collisions)` : ""}.`
+      );
+    },
+    [toast]
+  );
 
-  function exportAll() {
-    const payload: StoredData = { ...data, settings };
-    const stamp = new Date().toISOString().slice(0, 10);
+  const exportAll = useCallback(() => {
+    const payload = {
+      ...data,
+      app: "paper-annotate",
+      theme: undefined,
+    };
     downloadBlob(
-      new Blob([JSON.stringify({ ...payload, app: "paper-annotate" }, null, 2)], {
-        type: "application/json",
-      }),
-      `paper-annotate-backup-${stamp}.json`
+      new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }),
+      "paper-annotate-backup.json"
     );
-    showToast("Whole desk exported — one JSON to rule them all.");
-  }
+    toast("Whole desk exported as one backup file.");
+  }, [data, toast]);
 
-  function clearAll() {
-    try {
-      localStorage.clear();
-    } catch {
-      /* noop */
-    }
-    const keepTheme = settings.theme;
-    setData({
+  const clearAll = useCallback(() => {
+    setData((d) => ({
       version: 1,
       docs: [],
       annotations: {},
-      settings: { ...DEFAULT_SETTINGS, theme: keepTheme },
-    });
-    setView({ kind: "library" });
-    showToast("The desk is bare again.");
-  }
+      bookmarks: [],
+      settings: d.settings, // keep desk preferences, wipe the papers
+    }));
+    toast("The desk is clear. Settings were kept.");
+  }, [toast]);
 
-  const bytes = useMemo(
-    () => (view.kind === "settings" ? storageBytes() : 0),
-    [view.kind, data]
-  );
+  const sample = useCallback(() => {
+    const doc: DocumentRecord = {
+      id: uid(),
+      title: SAMPLE_TITLE,
+      sourceType: "text",
+      mode: "reflow",
+      markdown: SAMPLE_MARKDOWN,
+      createdAt: new Date().toISOString(),
+      fileName: "field-notes.md",
+      words: SAMPLE_MARKDOWN.split(/\s+/).filter(Boolean).length,
+    };
+    ingest(doc, { ...EMPTY_ANNOTATIONS });
+    toast("Sample paper is on the desk.");
+    return doc.id;
+  }, [ingest, toast]);
 
-  const activeDoc = view.kind === "doc" ? data.docs.find((d) => d.id === view.id) : undefined;
+  const bytes = useMemo(() => storageBytes(), [data]);
 
   return (
-    <div className="relative min-h-dvh">
-      <div className="grain-layer" aria-hidden="true" />
-      <div className="crease-layer" aria-hidden="true" />
-      <div className="vignette-layer" aria-hidden="true" />
+    <HashRouter>
+      <div aria-hidden="true">
+        <div className="grain-layer" />
+        <div className="crease-layer" />
+        <div className="vignette-layer" />
+      </div>
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <LibraryPage
+              data={data}
+              resolvedTheme={resolvedTheme}
+              onToggleTheme={toggleTheme}
+              onDelete={deleteDoc}
+              onIngest={ingest}
+              onImportBackup={importBackup}
+              onSample={sample}
+              onToast={toast}
+            />
+          }
+        />
+        <Route
+          path="/doc/:id"
+          element={
+            <DocPage
+              data={data}
+              settings={settings}
+              resolvedTheme={resolvedTheme}
+              onToggleTheme={toggleTheme}
+              onAnnotationsChange={setAnnotations}
+              onDocChange={updateDoc}
+              onBookmarkAdd={addBookmark}
+              onBookmarkDelete={deleteBookmark}
+              onPatchSettings={patchSettings}
+              onToast={toast}
+            />
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <SettingsRoute
+              settings={settings}
+              bytes={bytes}
+              onPatch={patchSettings}
+              onExportAll={exportAll}
+              onClearAll={clearAll}
+            />
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
 
-      {view.kind === "library" || (view.kind === "doc" && !activeDoc) ? (
-        <Library
-          docs={data.docs}
-          annotations={data.annotations}
-          resolvedTheme={resolvedTheme}
-          sheetClass={styleCls}
-          onToggleTheme={toggleThemeQuick}
-          onOpenSettings={() => {
-            setSettingsFrom(view);
-            setView({ kind: "settings" });
-          }}
-          onOpen={(id) => setView({ kind: "doc", id })}
-          onDelete={deleteDoc}
-          onIngest={ingest}
-          onIngestMany={ingestMany}
-          onSample={addSample}
-        />
-      ) : view.kind === "doc" && activeDoc ? (
-        <DocumentView
-          key={activeDoc.id}
-          doc={activeDoc}
-          annotations={data.annotations[activeDoc.id] ?? { ...EMPTY_ANNOTATIONS }}
-          settings={settings}
-          sheetClass={styleCls}
-          onAnnotationsChange={annotationsChange}
-          onDocChange={updateDoc}
-          onBack={() => setView({ kind: "library" })}
-          onOpenSettings={() => {
-            setSettingsFrom(view);
-            setView({ kind: "settings" });
-          }}
-          resolvedTheme={resolvedTheme}
-          onToggleTheme={toggleThemeQuick}
-          onToast={showToast}
-        />
-      ) : (
-        <SettingsPage
-          settings={settings}
-          sheetClass={styleCls}
-          storageBytes={bytes}
-          onPatch={patchSettings}
-          onBack={() => setView(settingsFrom)}
-          onExportAll={exportAll}
-          onClearAll={clearAll}
-        />
-      )}
+      {/* toasts */}
+      <div className="pointer-events-none fixed bottom-5 right-5 z-[99] flex w-[min(22rem,90vw)] flex-col gap-2">
+        {toasts.map((t) => (
+          <div
+            key={t.id}
+            role="status"
+            className="toast-in pointer-events-auto flex items-start gap-2.5 rounded-lg border border-[rgba(var(--shadow-ink),0.25)] bg-[var(--ink)] px-3.5 py-2.5 text-sm font-medium text-[var(--paper)] shadow-[0_12px_28px_-10px_rgba(var(--shadow-ink),0.6)]"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="mt-0.5 shrink-0 opacity-80">
+              <path d="m20 6-11 11-5-5" />
+            </svg>
+            {t.msg}
+          </div>
+        ))}
+      </div>
+    </HashRouter>
+  );
+}
 
-      {toast && (
-        <div
-          className="toast-in fixed bottom-5 left-1/2 z-[100] -translate-x-1/2 rounded-lg border border-line bg-sheet px-4 py-2.5 text-sm font-medium text-ink shadow-[0_14px_34px_-12px_rgba(var(--shadow-ink),0.55)]"
-          role="status"
-        >
-          {toast}
-        </div>
-      )}
-    </div>
+/* ————— route pages ————— */
+
+function LibraryPage({
+  data,
+  resolvedTheme,
+  onToggleTheme,
+  onDelete,
+  onIngest,
+  onImportBackup,
+  onSample,
+  onToast,
+}: {
+  data: StoredData;
+  resolvedTheme: "light" | "dark" | "black";
+  onToggleTheme: () => void;
+  onDelete: (id: string) => void;
+  onIngest: (doc: DocumentRecord, ann: AnnotationsState) => void;
+  onImportBackup: (p: BackupPayload) => void;
+  onSample: () => string;
+  onToast: (msg: string) => void;
+}) {
+  const navigate = useNavigate();
+  return (
+    <Library
+      docs={data.docs}
+      annotations={data.annotations}
+      resolvedTheme={resolvedTheme}
+      onToggleTheme={onToggleTheme}
+      onOpenSettings={() => navigate("/settings")}
+      onOpen={(id) => navigate(`/doc/${id}`)}
+      onDelete={onDelete}
+      onIngest={(doc, ann) => {
+        onIngest(doc, ann);
+        navigate(`/doc/${doc.id}`);
+      }}
+      onImportBackup={onImportBackup}
+      onSample={() => navigate(`/doc/${onSample()}`)}
+      onToast={onToast}
+    />
+  );
+}
+
+function DocPage({
+  data,
+  settings,
+  resolvedTheme,
+  onToggleTheme,
+  onAnnotationsChange,
+  onDocChange,
+  onBookmarkAdd,
+  onBookmarkDelete,
+  onPatchSettings,
+  onToast,
+}: {
+  data: StoredData;
+  settings: Settings;
+  resolvedTheme: "light" | "dark" | "black";
+  onToggleTheme: () => void;
+  onAnnotationsChange: (docId: string, ann: AnnotationsState) => void;
+  onDocChange: (doc: DocumentRecord) => void;
+  onBookmarkAdd: (bm: Bookmark) => void;
+  onBookmarkDelete: (id: string) => void;
+  onPatchSettings: (patch: Partial<Settings>) => void;
+  onToast: (msg: string) => void;
+}) {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const doc = data.docs.find((d) => d.id === id);
+  if (!doc) return <Navigate to="/" replace />;
+  return (
+    <DocumentView
+      doc={doc}
+      annotations={data.annotations[doc.id] ?? { highlights: [], notes: [] }}
+      bookmarks={data.bookmarks.filter((b) => b.docId === doc.id)}
+      settings={settings}
+      onAnnotationsChange={onAnnotationsChange}
+      onDocChange={onDocChange}
+      onBookmarkAdd={onBookmarkAdd}
+      onBookmarkDelete={onBookmarkDelete}
+      onPatchSettings={onPatchSettings}
+      onBack={() => navigate("/")}
+      onOpenSettings={() => navigate("/settings")}
+      resolvedTheme={resolvedTheme}
+      onToggleTheme={onToggleTheme}
+      onToast={onToast}
+    />
+  );
+}
+
+function SettingsRoute({
+  settings,
+  bytes,
+  onPatch,
+  onExportAll,
+  onClearAll,
+}: {
+  settings: Settings;
+  bytes: number;
+  onPatch: (patch: Partial<Settings>) => void;
+  onExportAll: () => void;
+  onClearAll: () => void;
+}) {
+  const navigate = useNavigate();
+  return (
+    <SettingsPage
+      settings={settings}
+      storageBytes={bytes}
+      onPatch={onPatch}
+      onBack={() => navigate("/")}
+      onExportAll={onExportAll}
+      onClearAll={onClearAll}
+    />
   );
 }

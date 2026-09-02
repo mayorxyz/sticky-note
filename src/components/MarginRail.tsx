@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useState, type PointerEvent, type RefObject } from "react";
 import type { Note, NoteInk } from "../data/types";
 import StickyNote from "./StickyNote";
 
@@ -7,20 +7,35 @@ interface RailProps {
   snippetFor: (noteId: string) => string | undefined;
   onPatch: (id: string, patch: Partial<Note>) => void;
   onDelete: (id: string) => void;
+  onLift?: (e: PointerEvent, noteId: string) => void;
+  /** note currently lifted as a drag ghost — hidden in the stack meanwhile */
+  hideId?: string;
   emptyHint?: string;
 }
 
 /** The margin column: notes stacked in source order beside the document. */
-export function MarginRail({ notes, snippetFor, onPatch, onDelete, emptyHint }: RailProps) {
+export function MarginRail({ notes, snippetFor, onPatch, onDelete, onLift, hideId, emptyHint }: RailProps) {
   return (
-    <div className="pa-notes flex w-60 shrink-0 flex-col gap-6 pt-1 xl:w-72" aria-label="Margin notes">
+    <div
+      data-margin-rail
+      className="pa-notes flex w-60 shrink-0 flex-col gap-6 pt-1 xl:w-72"
+      aria-label="Margin notes"
+    >
       {notes.length === 0 && (
         <p className="rounded-lg border border-dashed border-line px-3 py-4 text-center text-xs italic leading-relaxed text-ink-faint">
           {emptyHint ?? "Margin notes land here, tied to their passage with a thread of ink."}
         </p>
       )}
       {notes.map((n) => (
-        <StickyNote key={n.id} note={n} snippet={snippetFor(n.id)} onPatch={onPatch} onDelete={onDelete} />
+        <div key={n.id} style={{ visibility: n.id === hideId ? "hidden" : undefined }}>
+          <StickyNote
+            note={n}
+            snippet={snippetFor(n.id)}
+            onPatch={onPatch}
+            onDelete={onDelete}
+            onLiftPointerDown={onLift}
+          />
+        </div>
       ))}
     </div>
   );
@@ -75,7 +90,7 @@ export function ConnectorLayer({ containerRef, scrollerRef, notes, revision }: C
           const x2 = b.left - rootRect.left - 4;
           const y2 = b.top - rootRect.top + 18;
           const cx = x1 + Math.max(26, (x2 - x1) * 0.55);
-          // Arrowhead at the mark end, pointing from the note toward the mark.
+          // Small arrowhead at the mark end, pointing from the note toward the mark.
           const d =
             `M ${(x1 + 6).toFixed(1)} ${(y1 - 3.4).toFixed(1)} L ${x1.toFixed(1)} ${y1.toFixed(1)} L ${(x1 + 6).toFixed(1)} ${(y1 + 3.4).toFixed(1)}` +
             ` M ${x1.toFixed(1)} ${y1.toFixed(1)} C ${cx.toFixed(1)} ${y1.toFixed(1)}, ${cx.toFixed(1)} ${y2.toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}`;

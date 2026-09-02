@@ -1,6 +1,12 @@
 /* Core data model — persisted under "paper-annotate.docs.v1". */
 
-export type MarkType = "highlight" | "underline" | "strikethrough";
+export type MarkType =
+  | "highlight"
+  | "underline"
+  | "strikethrough"
+  | "squiggly"
+  | "box"
+  | "circle";
 export type MarkColor =
   | "sun"
   | "rose"
@@ -11,13 +17,19 @@ export type MarkColor =
   | "teal"
   | "graphite"
   | "coral";
-export type NoteFont = "caveat" | "kalam" | "patrick-hand";
+export type NoteFont =
+  | "caveat"
+  | "kalam"
+  | "patrick-hand"
+  | "shadows"
+  | "indie"
+  | "architects";
 export type NoteInk = "blue" | "red" | "pencil";
 export type Placement = "margin" | "freeform";
 export type RenderMode = "reflow" | "layout";
+export type ThemeChoice = "light" | "dark" | "black" | "system";
 export type PaperStyle = "plain" | "lined" | "grid" | "dot" | "crumpled" | "aged" | "blueprint";
 export type Orientation = "portrait" | "landscape";
-export type ThemeChoice = "light" | "dark" | "black" | "system";
 export type ExportFormat = "pdf" | "markdown" | "json";
 
 /** Fractional rect (0..1) relative to its page — resolution independent. */
@@ -60,7 +72,7 @@ export interface DocumentRecord {
   fileName?: string;
   pageCount?: number;
   words?: number;
-  /** per-document default placement for new notes (overrides the global setting) */
+  /** per-document override of the global default note placement */
   notePlacement?: Placement;
 }
 
@@ -88,12 +100,25 @@ export interface Note {
   /** For freeform notes in layout mode: the page the note is stuck on. */
   page?: number;
   /**
-   * Freeform: { x, y } — px inside the reflow article, or page fractions (0..1)
-   * inside a layout page; w/h optional remembered size.
+   * Freeform: { x, y } — px inside the reading container, or page fractions
+   * (0..1) inside a layout page; w/h optional remembered size.
    * Margin: { afterHighlight: true }.
    */
   position: { x: number; y: number; w?: number; h?: number } | { afterHighlight: true };
   collapsed: boolean;
+  createdAt: string;
+  /** addressed/done — faded but kept in history and filters */
+  resolved?: boolean;
+  /** manual ordering slot for margin notes (future drag-reorder) */
+  order?: number;
+}
+
+/** Lightweight position flag, separate from notes and highlights. */
+export interface Bookmark {
+  id: string;
+  docId: string;
+  label: string;
+  anchor: { kind: "text"; offset: number } | { kind: "page"; page: number };
   createdAt: string;
 }
 
@@ -102,23 +127,23 @@ export interface AnnotationsState {
   notes: Note[];
 }
 
-/* ————— Settings (nested in StoredData, single storage funnel) ————— */
-
 export interface Settings {
   theme: ThemeChoice;
   paperStyle: PaperStyle;
   orientation: Orientation;
   /** ordered subset of the full palette shown in the picker */
   activeHighlightColors: MarkColor[];
-  /** color key → user-assigned meaning, shown as tooltip */
+  /** color key → user-assigned meaning, surfaced as tooltips */
   highlightLabels: Record<string, string>;
   defaultNotePlacement: Placement;
   defaultNoteFont: NoteFont;
   defaultNoteInk: NoteInk;
-  /** reflow body size in px */
+  /** reflow body text size, px */
   readingFontSize: number;
-  /** reflow content column width in px */
+  /** reflow column width, px */
   readingWidth: number;
+  /** sticky-note hand size, px — independent of reading size */
+  noteFontSize: number;
   reduceMotion: boolean;
   defaultExportFormat: ExportFormat;
 }
@@ -127,9 +152,10 @@ export interface StoredData {
   version: 1;
   docs: DocumentRecord[];
   annotations: Record<string, AnnotationsState>;
-  /** legacy location for the theme (kept for migration compatibility) */
+  bookmarks: Bookmark[];
+  /** legacy pre-settings theme, kept for migration */
   theme?: "light" | "dark";
-  settings?: Settings;
+  settings: Settings;
 }
 
 /* ————— presentation metadata ————— */
@@ -150,12 +176,18 @@ export const MARK_TYPES: { key: MarkType; label: string }[] = [
   { key: "highlight", label: "Highlight" },
   { key: "underline", label: "Underline" },
   { key: "strikethrough", label: "Strikethrough" },
+  { key: "squiggly", label: "Squiggle" },
+  { key: "box", label: "Box" },
+  { key: "circle", label: "Oval" },
 ];
 
 export const NOTE_FONTS: { key: NoteFont; label: string; css: string }[] = [
   { key: "caveat", label: "Caveat", css: "var(--font-note-caveat)" },
   { key: "kalam", label: "Kalam", css: "var(--font-note-kalam)" },
   { key: "patrick-hand", label: "Patrick Hand", css: "var(--font-note-patrick)" },
+  { key: "shadows", label: "Shadows Into Light", css: "var(--font-note-shadows)" },
+  { key: "indie", label: "Indie Flower", css: "var(--font-note-indie)" },
+  { key: "architects", label: "Architects Daughter", css: "var(--font-note-architects)" },
 ];
 
 export const NOTE_INKS: { key: NoteInk; label: string; css: string }[] = [
@@ -175,7 +207,3 @@ export const PAPER_STYLES: { key: PaperStyle; label: string }[] = [
 ];
 
 export const EMPTY_ANNOTATIONS: AnnotationsState = { highlights: [], notes: [] };
-
-export function sheetClass(style: PaperStyle): string {
-  return style === "plain" ? "" : `paper-${style}`;
-}

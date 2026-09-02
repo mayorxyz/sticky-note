@@ -1,7 +1,7 @@
 import { getDocument, GlobalWorkerOptions, Util } from "pdfjs-dist";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-import type { Highlight, MarkColor, Note, PageData, RectF } from "../data/types";
+import type { Highlight, MarkColor, Note, PageData } from "../data/types";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
@@ -88,7 +88,6 @@ export async function extractMarkdown(
       const y = Math.round(vp.height - tr[5]);
       const h = Math.hypot(tr[2], tr[3]) || Math.abs(tr[0]) * 0.8 || 10;
       const bucket = nearestBucket(lines, y, Math.max(3, h * 0.55));
-      const fs = Math.hypot(tr[2], tr[3]) || 10;
       const bold = /bold|black|heavy|semi/i.test(item.fontName);
       const existing = bucket !== null ? lines.get(bucket) : undefined;
       if (existing) {
@@ -259,9 +258,9 @@ export async function ingestPdf(
 }
 
 /* ————— Flattened annotated PDF export (hand-rolled writer) —————
- * Emits one JPEG XObject per source page, bakes highlight/underline/strike
- * rects underneath the image and draws sticky-note boxes in a base-14 font on
- * top. No compression, classic xref — deliberately boring and robust.
+ * Emits one JPEG XObject per source page, bakes marks (all six mark types)
+ * underneath the image and draws sticky-note boxes in a base-14 font on top.
+ * No compression, classic xref — deliberately boring and robust.
  */
 
 const HL_RGB: Record<MarkColor, [number, number, number]> = {
@@ -275,28 +274,6 @@ const HL_RGB: Record<MarkColor, [number, number, number]> = {
   graphite: [0.55, 0.55, 0.6],
   coral: [0.97, 0.55, 0.42],
 };
-
-function b64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-function pdfEscape(s: string): string {
-  return s
-    .replace(/[\u2018\u2019]/g, "'")
-    .replace(/[\u201c\u201d]/g, '"')
-    .replace(/[\u2013\u2014]/g, "-")
-    .replace(/[^\x20-\x7e]/g, "")
-    .replace(/\\/g, "\\\\")
-    .replace(/\(/g, "\\(")
-    .replace(/\)/g, "\\)");
-}
-
-function dataUrlToBytes(url: string): Uint8Array<ArrayBuffer> {
-  return b64ToBytes(url.slice(url.indexOf(",") + 1));
-}
 
 function wrapLines(text: string, width: number): string[] {
   const words = text.replace(/\s+/g, " ").trim().split(" ");
@@ -315,11 +292,19 @@ function wrapLines(text: string, width: number): string[] {
   return lines.length ? lines : [""];
 }
 
+function stripNonLatin(s: string): string {
+  return s
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2013\u2014]/g, "-")
+    .replace(/[^\x20-\x7e]/g, "");
+}
+
 function buildPdfFromJpegs(
   items: { jpeg: Uint8Array<ArrayBuffer>; w: number; h: number }[]
 ): Uint8Array<ArrayBuffer> {
   const enc = new TextEncoder();
-  const chunks: (Uint8Array<ArrayBuffer> | Uint8Array<ArrayBufferLike>)[] = [];
+  const chunks: Uint8Array<ArrayBufferLike>[] = [];
   const offsets: number[] = [];
   let pos = 0;
   const pushStr = (s: string) => {
@@ -338,11 +323,10 @@ function buildPdfFromJpegs(
 
   const n = items.length;
   const fontObj = 3 + 2 * n;
-  const pagesObj = 2;
   const kids = items.map((_, i) => `${4 + 2 * i} 0 R`).join(" ");
 
   pushStr("%PDF-1.4\n%\u00e2\u00e3\u00cf\u00d3\n");
-  obj(1, `<< /Type /Catalog /Pages ${pagesObj} 0 R >>`);
+  obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
   obj(2, `<< /Type /Pages /Kids [${kids}] /Count ${n} >>`);
   items.forEach((it, i) => {
     const pageN = 4 + 2 * i;
@@ -405,26 +389,54 @@ export async function exportAnnotatedPdf(
         const y = rect.y * canvas.height;
         const w = rect.w * canvas.width;
         const hh = rect.h * canvas.height;
+        const dark = `rgb(${Math.round(r * 190)}, ${Math.round(g * 190)}, ${Math.round(b * 190)})`;
         if (h.type === "highlight") {
           ctx.globalAlpha = 0.55;
           ctx.fillStyle = `rgb(${Math.round(r * 255)}, ${Math.round(g * 255)}, ${Math.round(b * 255)})`;
           ctx.fillRect(x, y, w, hh);
           ctx.globalAlpha = 1;
-        } else {
-          ctx.fillStyle = `rgb(${Math.round(r * 200)}, ${Math.round(g * 200)}, ${Math.round(b * 200)})`;
+        } else if (h.type === "underline") {
           const t = Math.max(2, hh * 0.13);
-          if (h.type === "underline") ctx.fillRect(x, y + hh - t, w, t);
-          else ctx.fillRect(x, y + hh * 0.45, w, t);
+          ctx.fillStyle = dark;
+          ctx.fillRect(x, y + hh - t, w, t);
+        } else if (h.type === "strikethrough") {
+          const t = Math.max(2, hh * 0.12);
+          ctx.fillStyle = dark;
+          ctx.fillRect(x, y + hh * 0.45, w, t);
+        } else if (h.type === "squiggly") {
+          // sine squiggle along the baseline
+          ctx.strokeStyle = dark;
+          ctx.lineWidth = Math.max(1.6, hh * 0.09);
+          ctx.beginPath();
+          const baseY = y + hh * 0.92;
+          const amp = Math.max(2, hh * 0.2);
+          const lambda = Math.max(8, hh * 0.6);
+          for (let sx = 0; sx <= w; sx += 2) {
+            const sy = baseY + Math.sin((sx / lambda) * Math.PI * 2) * amp * 0.5;
+            if (sx === 0) ctx.moveTo(x + sx, sy);
+            else ctx.lineTo(x + sx, sy);
+          }
+          ctx.stroke();
+        } else if (h.type === "box") {
+          ctx.strokeStyle = dark;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x + 1, y + 1, Math.max(1, w - 2), Math.max(1, hh - 2));
+        } else if (h.type === "circle") {
+          ctx.strokeStyle = dark;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(x + w / 2, y + hh / 2, Math.max(2, w / 2 - 1), Math.max(2, hh / 2 - 1), 0, 0, Math.PI * 2);
+          ctx.stroke();
         }
       }
     }
 
-    const notes = ann.notes.filter((nt) => nt.page === p.pageNum || (!nt.page && p.pageNum === 1));
+    const notes = ann.notes.filter((nt) => nt.page === p.pageNum);
     notes.forEach((nt, i) => {
       const pos = nt.position as { x?: number; y?: number; w?: number };
       const fx = typeof pos.x === "number" ? pos.x : 0.62;
       const fy = typeof pos.y === "number" ? pos.y : 0.08 + i * 0.16;
-      const bw = (pos.w ?? 0.3) * canvas.width;
+      const bw = Math.min((pos.w ?? 0.3) * canvas.width, canvas.width * 0.45);
       const text = nt.content.trim() || "(empty note)";
       const lines = wrapLines(text, Math.max(10, Math.floor(bw / 9)));
       const fs = Math.max(12, canvas.width * 0.021);
@@ -438,10 +450,10 @@ export async function exportAnnotatedPdf(
       ctx.fillStyle = "#fdf6a9";
       ctx.fillRect(bx, by, bw, bh);
       ctx.restore();
-      ctx.fillStyle = nt.ink === "red" ? "#b02a2a" : nt.ink === "blue" ? "#27439e" : "#57534a";
+      ctx.fillStyle = nt.ink === "red" ? "#b02a2a" : nt.ink === "blue" ? "#1342ae" : "#5d5648";
       ctx.font = `${fs}px Helvetica, Arial, sans-serif`;
       lines.forEach((ln, j) => {
-        ctx.fillText(pdfEscapePlain(ln), bx + fs * 0.6, by + fs * 1.5 + j * fs * 1.35);
+        ctx.fillText(stripNonLatin(ln), bx + fs * 0.6, by + fs * 1.5 + j * fs * 1.35);
       });
     });
 
@@ -459,9 +471,3 @@ export async function exportAnnotatedPdf(
   const bytes = buildPdfFromJpegs(items);
   return new Blob([bytes], { type: "application/pdf" });
 }
-
-function pdfEscapePlain(s: string): string {
-  return s.replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/[^\x20-\x7e]/g, "");
-}
-
-export { pdfEscape };

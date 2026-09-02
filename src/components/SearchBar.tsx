@@ -129,9 +129,7 @@ export default function SearchBar({ source, onJumpText, onJumpPage, onClose }: P
                 onClick={() => jump(m)}
               >
                 {m.page !== undefined && (
-                  <span className="mr-1.5 font-display text-xs font-bold text-accent-deep">
-                    p. {m.page}
-                  </span>
+                  <span className="mr-1.5 font-display text-xs font-bold text-accent-deep">p. {m.page}</span>
                 )}
                 {renderLabel(m.label)}
               </button>

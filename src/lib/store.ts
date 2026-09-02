@@ -1,4 +1,4 @@
-import type { AnnotationsState, MarkColor, Settings, StoredData } from "../data/types";
+import type { AnnotationsState, Bookmark, MarkColor, Settings, StoredData } from "../data/types";
 import { MARK_COLORS } from "../data/types";
 
 export const STORAGE_KEY = "paper-annotate.docs.v1";
@@ -16,6 +16,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultNoteInk: "blue",
   readingFontSize: 17,
   readingWidth: 740,
+  noteFontSize: 19,
   reduceMotion: false,
   defaultExportFormat: "pdf",
 };
@@ -46,12 +47,12 @@ export function normalizeSettings(raw: unknown, legacyTheme?: "light" | "dark"):
     orientation: s.orientation === "landscape" ? "landscape" : "portrait",
     activeHighlightColors: active.length ? active : DEFAULT_SETTINGS.activeHighlightColors,
     highlightLabels:
-      s.highlightLabels && typeof s.highlightLabels === "object"
-        ? { ...s.highlightLabels }
-        : {},
+      s.highlightLabels && typeof s.highlightLabels === "object" ? { ...s.highlightLabels } : {},
     defaultNotePlacement: s.defaultNotePlacement === "freeform" ? "freeform" : "margin",
     defaultNoteFont:
-      s.defaultNoteFont === "kalam" || s.defaultNoteFont === "patrick-hand"
+      s.defaultNoteFont === "kalam" || s.defaultNoteFont === "patrick-hand" ||
+      s.defaultNoteFont === "shadows" || s.defaultNoteFont === "indie" ||
+      s.defaultNoteFont === "architects"
         ? s.defaultNoteFont
         : "caveat",
     defaultNoteInk: s.defaultNoteInk === "red" || s.defaultNoteInk === "pencil" ? s.defaultNoteInk : "blue",
@@ -63,6 +64,10 @@ export function normalizeSettings(raw: unknown, legacyTheme?: "light" | "dark"):
       typeof s.readingWidth === "number" && s.readingWidth >= 520 && s.readingWidth <= 1040
         ? s.readingWidth
         : DEFAULT_SETTINGS.readingWidth,
+    noteFontSize:
+      typeof s.noteFontSize === "number" && s.noteFontSize >= 13 && s.noteFontSize <= 30
+        ? s.noteFontSize
+        : DEFAULT_SETTINGS.noteFontSize,
     reduceMotion: s.reduceMotion === true,
     defaultExportFormat:
       s.defaultExportFormat === "markdown" || s.defaultExportFormat === "json"
@@ -71,14 +76,17 @@ export function normalizeSettings(raw: unknown, legacyTheme?: "light" | "dark"):
   };
 }
 
+function emptyData(): StoredData {
+  return { version: 1, docs: [], annotations: {}, bookmarks: [], settings: { ...DEFAULT_SETTINGS } };
+}
+
 /** Load & lightly validate; future shape changes bump the key suffix + migrate here. */
 export function loadData(): StoredData {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { version: 1, docs: [], annotations: {}, settings: { ...DEFAULT_SETTINGS } };
+    if (!raw) return emptyData();
     const parsed = JSON.parse(raw) as Partial<StoredData>;
-    if (!parsed || typeof parsed !== "object")
-      return { version: 1, docs: [], annotations: {}, settings: { ...DEFAULT_SETTINGS } };
+    if (!parsed || typeof parsed !== "object") return emptyData();
     return {
       version: 1,
       docs: Array.isArray(parsed.docs) ? parsed.docs : [],
@@ -86,11 +94,12 @@ export function loadData(): StoredData {
         parsed.annotations && typeof parsed.annotations === "object"
           ? (parsed.annotations as Record<string, AnnotationsState>)
           : {},
+      bookmarks: Array.isArray(parsed.bookmarks) ? (parsed.bookmarks as Bookmark[]) : [],
       theme: parsed.theme === "dark" || parsed.theme === "light" ? parsed.theme : undefined,
       settings: normalizeSettings(parsed.settings, parsed.theme),
     };
   } catch {
-    return { version: 1, docs: [], annotations: {}, settings: { ...DEFAULT_SETTINGS } };
+    return emptyData();
   }
 }
 
@@ -150,4 +159,25 @@ export function downloadBlob(blob: Blob, filename: string): void {
 
 export function safeFileName(title: string): string {
   return title.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "document";
+}
+
+export async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      ta.remove();
+      return ok;
+    } catch {
+      return false;
+    }
+  }
 }

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import type { AnnotationsState, DocumentRecord, ExportFormat } from "../data/types";
 import { exportAnnotatedPdf } from "../lib/pdf";
 import { downloadBlob, safeFileName } from "../lib/store";
-import { IconChevronDown, IconDownload, IconFile, IconSpin } from "./icons";
+import { IconChevronDown, IconDownload, IconFile, IconHighlighter, IconSpin } from "./icons";
 
 interface Props {
   doc: DocumentRecord;
@@ -18,9 +18,7 @@ function markdownWithAnnotations(doc: DocumentRecord, ann: AnnotationsState): st
     lines.push("### Marks", "");
     for (const h of ann.highlights) {
       const where =
-        h.anchor.kind === "text"
-          ? `chars ${h.anchor.start}–${h.anchor.end}`
-          : `page ${h.anchor.page}`;
+        h.anchor.kind === "text" ? `chars ${h.anchor.start}–${h.anchor.end}` : `page ${h.anchor.page}`;
       lines.push(
         `- **${h.type}** (${h.color}, ${where})${h.anchor.snippet ? ` — “${h.anchor.snippet}”` : ""}`
       );
@@ -38,6 +36,18 @@ function markdownWithAnnotations(doc: DocumentRecord, ann: AnnotationsState): st
   }
   if (!ann.highlights.length && !ann.notes.length) lines.push("_No annotations yet._");
   return lines.join("\n") + "\n";
+}
+
+/** Highlighted passages only — a clean study list, no note content. */
+function highlightsOnly(doc: DocumentRecord, ann: AnnotationsState): string {
+  const lines: string[] = [`# Highlighted passages — ${doc.title}`, ""];
+  ann.highlights.forEach((h, i) => {
+    const where =
+      h.anchor.kind === "text" ? `chars ${h.anchor.start}–${h.anchor.end}` : `p. ${h.anchor.page}`;
+    lines.push(`${i + 1}. ${h.anchor.snippet ? `“${h.anchor.snippet}”` : "_(no text captured)_"}  `);
+    lines.push(`   _${h.type} · ${h.color} · ${where}_`, "");
+  });
+  return lines.join("\n");
 }
 
 export default function ExportMenu({ doc, annotations, preferred, onToast }: Props) {
@@ -73,6 +83,15 @@ export default function ExportMenu({ doc, annotations, preferred, onToast }: Pro
     setOpen(false);
   }
 
+  function exportHighlights() {
+    downloadBlob(
+      new Blob([highlightsOnly(doc, annotations)], { type: "text/markdown" }),
+      `${safeFileName(doc.title)}-highlights.md`
+    );
+    onToast("Highlighted passages exported as a clean list.");
+    setOpen(false);
+  }
+
   function exportBackup() {
     const payload = JSON.stringify({ app: "paper-annotate", version: 1, doc, annotations }, null, 2);
     downloadBlob(
@@ -83,7 +102,7 @@ export default function ExportMenu({ doc, annotations, preferred, onToast }: Pro
     setOpen(false);
   }
 
-  const all: {
+  const trio: {
     key: ExportFormat;
     label: string;
     hint: string;
@@ -104,15 +123,9 @@ export default function ExportMenu({ doc, annotations, preferred, onToast }: Pro
       disabled: !doc.markdown,
       onClick: exportMarkdown,
     },
-    {
-      key: "json",
-      label: "Backup (.json)",
-      hint: "Document + all annotations, portable",
-      onClick: exportBackup,
-    },
+    { key: "json", label: "Backup (.json)", hint: "Document + all annotations, portable", onClick: exportBackup },
   ];
-  // preferred format first
-  const items = [...all.filter((i) => i.key === preferred), ...all.filter((i) => i.key !== preferred)];
+  const items = [...trio.filter((i) => i.key === preferred), ...trio.filter((i) => i.key !== preferred)];
 
   return (
     <div
@@ -126,11 +139,12 @@ export default function ExportMenu({ doc, annotations, preferred, onToast }: Pro
         aria-expanded={open}
         aria-haspopup="menu"
       >
-        <IconDownload size={15} /> Export <IconChevronDown size={13} />
+        <IconDownload size={15} /> <span className="hidden sm:inline">Export</span>
+        <IconChevronDown size={13} />
       </button>
       {open && (
         <div
-          className="pop absolute right-0 top-full z-50 mt-2 w-72 rounded-lg border border-line bg-sheet p-1.5 shadow-[0_18px_40px_-16px_rgba(var(--shadow-ink),0.5)]"
+          className="pop absolute right-0 top-full z-50 mt-2 w-[min(92vw,18rem)] rounded-lg border border-line bg-sheet p-1.5 shadow-[0_18px_40px_-16px_rgba(var(--shadow-ink),0.5)]"
           role="menu"
         >
           {items.map((it) => (
@@ -144,7 +158,7 @@ export default function ExportMenu({ doc, annotations, preferred, onToast }: Pro
               <span className="text-ink-faint">
                 {busy === it.key ? <IconSpin size={16} className="spin-slow" /> : <IconFile size={16} />}
               </span>
-              <span>
+              <span className="min-w-0">
                 <span className="flex items-center gap-1.5 text-sm font-semibold text-ink">
                   {it.label}
                   {it.key === preferred && (
@@ -159,6 +173,25 @@ export default function ExportMenu({ doc, annotations, preferred, onToast }: Pro
               </span>
             </button>
           ))}
+          <div className="my-1 border-t border-dashed border-line" />
+          <button
+            role="menuitem"
+            disabled={!annotations.highlights.length}
+            onClick={exportHighlights}
+            className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors hover:bg-[rgba(var(--shadow-ink),0.06)] disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <span className="text-ink-faint">
+              <IconHighlighter size={16} />
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-ink">Highlights only</span>
+              <span className="block text-[0.68rem] leading-snug text-ink-faint">
+                {annotations.highlights.length
+                  ? `Just the ${annotations.highlights.length} marked passages, as a clean list`
+                  : "No highlights yet"}
+              </span>
+            </span>
+          </button>
         </div>
       )}
     </div>

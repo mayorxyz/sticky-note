@@ -1,6 +1,6 @@
 import { useRef, useState, type CSSProperties } from "react";
-import type { AnnotationsState, DocumentRecord } from "../data/types";
-import { formatDate, uid } from "../lib/store";
+import type { AnnotationsState, Bookmark, DocumentRecord } from "../data/types";
+import { formatDate } from "../lib/store";
 import Uploader from "./Uploader";
 import {
   IconBook,
@@ -16,18 +16,24 @@ import {
   IconTrash,
 } from "./icons";
 
+export interface BackupPayload {
+  docs: DocumentRecord[];
+  annotations: Record<string, AnnotationsState>;
+  bookmarks?: Bookmark[];
+}
+
 interface Props {
   docs: DocumentRecord[];
   annotations: Record<string, AnnotationsState>;
   resolvedTheme: "light" | "dark" | "black";
-  sheetClass: string;
   onToggleTheme: () => void;
   onOpenSettings: () => void;
   onOpen: (id: string) => void;
   onDelete: (id: string) => void;
   onIngest: (doc: DocumentRecord, ann: AnnotationsState) => void;
-  onIngestMany: (docs: DocumentRecord[], annotations: Record<string, AnnotationsState>) => void;
+  onImportBackup: (payload: BackupPayload) => void;
   onSample: () => void;
+  onToast: (msg: string) => void;
 }
 
 const TILTS = ["-0.8deg", "0.6deg", "-0.4deg", "0.9deg", "-0.6deg", "0.3deg"];
@@ -36,14 +42,14 @@ export default function Library({
   docs,
   annotations,
   resolvedTheme,
-  sheetClass,
   onToggleTheme,
   onOpenSettings,
   onOpen,
   onDelete,
   onIngest,
-  onIngestMany,
+  onImportBackup,
   onSample,
+  onToast,
 }: Props) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -56,25 +62,28 @@ export default function Library({
         const parsed = JSON.parse(String(reader.result)) as {
           app?: string;
           doc?: DocumentRecord;
-          annotations?: AnnotationsState;
+          annotations?: AnnotationsState | Record<string, AnnotationsState>;
           docs?: DocumentRecord[];
+          bookmarks?: Bookmark[];
         };
         if (Array.isArray(parsed.docs)) {
-          // full-desk backup
-          const ann = (parsed.annotations ?? {}) as Record<string, AnnotationsState>;
-          onIngestMany(parsed.docs, ann);
+          onImportBackup({
+            docs: parsed.docs,
+            annotations: (parsed.annotations ?? {}) as Record<string, AnnotationsState>,
+            bookmarks: parsed.bookmarks,
+          });
           return;
         }
         if (parsed?.doc?.id && parsed.doc.title) {
-          onIngest(
-            { ...parsed.doc, id: uid(), createdAt: new Date().toISOString() },
-            parsed.annotations ?? { highlights: [], notes: [] }
-          );
+          onImportBackup({
+            docs: [parsed.doc],
+            annotations: { [parsed.doc.id]: (parsed.annotations as AnnotationsState) ?? { highlights: [], notes: [] } },
+          });
           return;
         }
         throw new Error("bad file");
       } catch {
-        window.alert("That doesn't look like a Paper Annotate backup file.");
+        onToast("That doesn't look like a Paper Annotate backup file.");
       }
     };
     reader.readAsText(file);
@@ -82,7 +91,7 @@ export default function Library({
 
   return (
     <div className="relative z-10 mx-auto max-w-5xl px-4 pb-24 pt-8 sm:px-6">
-      <header className="flex items-start justify-between gap-4">
+      <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="font-display text-4xl font-black tracking-tight text-ink sm:text-5xl">
             Paper Annotate
@@ -114,14 +123,9 @@ export default function Library({
             }}
           />
           <button className="btn-ghost" onClick={() => importRef.current?.click()} title="Restore a .json backup">
-            <IconDownload size={15} /> Restore
+            <IconDownload size={15} /> <span className="hidden sm:inline">Restore</span>
           </button>
-          <button
-            className="icon-btn"
-            onClick={onOpenSettings}
-            title="Desk settings"
-            aria-label="Open settings"
-          >
+          <button className="icon-btn" onClick={onOpenSettings} title="Desk settings" aria-label="Open settings">
             <IconGear size={19} />
           </button>
           <button
@@ -164,10 +168,11 @@ export default function Library({
                 const ann = annotations[doc.id];
                 const marks = ann?.highlights.length ?? 0;
                 const notes = ann?.notes.length ?? 0;
+                const density = marks + notes;
                 return (
                   <li
                     key={doc.id}
-                    className={`desk-card tilted rise group flex flex-col overflow-hidden rounded-lg ${sheetClass}`}
+                    className="desk-card tilted rise group flex flex-col overflow-hidden rounded-lg"
                     style={{ rotate: TILTS[i % TILTS.length], animationDelay: `${i * 60}ms` } as CSSProperties}
                   >
                     <button
@@ -198,6 +203,11 @@ export default function Library({
                           )}
                         </span>
                       </span>
+                      {density > 0 && (
+                        <span className="absolute right-2 top-2 rounded-full bg-accent px-2 py-0.5 font-display text-[0.68rem] font-bold text-[var(--paper)] shadow-md">
+                          {density} annotation{density === 1 ? "" : "s"}
+                        </span>
+                      )}
                     </button>
                     <div className="flex flex-1 flex-col p-4">
                       <h3 className="line-clamp-2 font-display text-base font-bold leading-snug text-ink">{doc.title}</h3>
@@ -207,13 +217,13 @@ export default function Library({
                         {doc.words ? ` · ${doc.words.toLocaleString()} words` : ""}
                       </p>
                       <div className="mt-2 flex items-center gap-3 text-xs font-medium text-ink-soft">
-                        <span className="inline-flex items-center gap-1">
+                        <span className="inline-flex items-center gap-1" title={`${marks} marks`}>
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="var(--hl-sun)" stroke="var(--hl-sun-solid)" strokeWidth="1.5" aria-hidden="true">
                             <rect x="3" y="7" width="18" height="10" rx="2" />
                           </svg>
                           {marks}
                         </span>
-                        <span className="inline-flex items-center gap-1 text-[var(--ink-blue-ui)]">
+                        <span className="inline-flex items-center gap-1 text-[var(--ink-blue-ui)]" title={`${notes} notes`}>
                           <IconNote size={13} /> {notes}
                         </span>
                       </div>

@@ -40,11 +40,17 @@ hand in the loop — drag a note, peel its corner, cross something out.
 | Red | corrections | questions |
 | Pencil | drafts | doubts |
 
+## Six marks, six moods
+
+Beyond the plain highlight there is the underline, the strikethrough, the
+squiggle of suspicion, the box around a definition, and the oval around a name
+worth remembering. Shift-click several marks to recolor or tear them together.
+
 ## Try this now
 
 Select this sentence and press **H** to highlight it, **U** to underline, **S** to
 strike through, or **N** to attach a sticky note. Click an existing mark to
-recolor it or tear it off. Ctrl+Z undoes any of it.
+recolor it, copy it as a citation, or tear it off. Ctrl+Z undoes any of it.
 
 ---
 

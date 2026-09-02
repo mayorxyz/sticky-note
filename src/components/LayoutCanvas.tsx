@@ -20,7 +20,10 @@ interface Props {
   highlights: Highlight[];
   clean: boolean;
   markTitles?: Record<string, string>;
+  selectedIds?: Set<string>;
   sheetClass?: string;
+  /** 0.5–1.8 — display zoom, independent of browser zoom */
+  zoom: number;
   onMarkClick: (id: string, e: ReactMouseEvent) => void;
   onSelect: (sel: LayoutSelection) => void;
   onPageSeen: (page: number) => void;
@@ -50,31 +53,121 @@ const HL_SOLID: Record<MarkColor, string> = {
   coral: "var(--hl-coral-solid)",
 };
 
-function markStyle(r: RectF, type: MarkType, color: MarkColor): CSSProperties {
-  const base: CSSProperties = {
+/** one period per 10 units; stretched to rect width via preserveAspectRatio=none */
+const WAVE_D = (() => {
+  let d = "M0 5 Q 2.5 1, 5 5";
+  for (let x = 10; x <= 120; x += 5) d += ` T ${x} 5`;
+  return d;
+})();
+
+function MarkShape({
+  r,
+  type,
+  color,
+  title,
+  id,
+  selected,
+}: {
+  r: RectF;
+  type: MarkType;
+  color: MarkColor;
+  title?: string;
+  id: string;
+  selected: boolean;
+}) {
+  const pos: CSSProperties = {
     left: `${r.x * 100}%`,
     width: `${r.w * 100}%`,
   };
+  const cls = `pa-lh${selected ? " pa-lh-sel" : ""}`;
   if (type === "highlight") {
-    return { ...base, top: `${r.y * 100}%`, height: `${r.h * 100}%`, background: HL_FILL[color] };
+    return (
+      <div
+        data-lh={id}
+        className={cls}
+        title={title}
+        style={{ ...pos, top: `${r.y * 100}%`, height: `${r.h * 100}%`, background: HL_FILL[color] }}
+      />
+    );
   }
   if (type === "underline") {
-    return {
-      ...base,
-      top: `${(r.y + r.h) * 100}%`,
-      height: `${Math.max(r.h * 0.14, 0.35)}%`,
-      transform: "translateY(-100%)",
-      background: HL_SOLID[color],
-      opacity: 0.85,
-    };
+    return (
+      <div
+        data-lh={id}
+        className={cls}
+        title={title}
+        style={{
+          ...pos,
+          top: `${(r.y + r.h) * 100}%`,
+          height: `${Math.max(r.h * 0.14, 0.35)}%`,
+          transform: "translateY(-100%)",
+          background: HL_SOLID[color],
+          opacity: 0.85,
+        }}
+      />
+    );
   }
-  return {
-    ...base,
-    top: `${(r.y + r.h * 0.52) * 100}%`,
-    height: `${Math.max(r.h * 0.12, 0.3)}%`,
-    background: HL_SOLID[color],
-    opacity: 0.85,
-  };
+  if (type === "strikethrough") {
+    return (
+      <div
+        data-lh={id}
+        className={cls}
+        title={title}
+        style={{
+          ...pos,
+          top: `${(r.y + r.h * 0.52) * 100}%`,
+          height: `${Math.max(r.h * 0.12, 0.3)}%`,
+          background: HL_SOLID[color],
+          opacity: 0.85,
+        }}
+      />
+    );
+  }
+  if (type === "squiggly") {
+    return (
+      <svg
+        data-lh={id}
+        className={cls}
+        style={{
+          ...pos,
+          top: `${(r.y + r.h) * 100}%`,
+          height: "7px",
+          transform: "translateY(-90%)",
+          overflow: "visible",
+        }}
+        viewBox="0 0 120 8"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+      >
+        <title>{title}</title>
+        <path
+          d={WAVE_D}
+          fill="none"
+          stroke={HL_SOLID[color]}
+          strokeWidth="1.8"
+          vectorEffect="non-scaling-stroke"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  // box / circle — outline geometry
+  return (
+    <div
+      data-lh={id}
+      className={cls}
+      title={title}
+      style={{
+        ...pos,
+        top: `${r.y * 100}%`,
+        height: `${r.h * 100}%`,
+        border: `2px solid ${HL_SOLID[color]}`,
+        borderRadius: type === "circle" ? "50%" : "3px",
+        background: "transparent",
+        mixBlendMode: "normal",
+      }}
+    />
+  );
 }
 
 function PageBlock({
@@ -82,6 +175,7 @@ function PageBlock({
   highlights,
   clean,
   markTitles,
+  selectedIds,
   sheetClass,
   onMarkClick,
   onSelect,
@@ -91,6 +185,7 @@ function PageBlock({
   highlights: Highlight[];
   clean: boolean;
   markTitles?: Record<string, string>;
+  selectedIds?: Set<string>;
   sheetClass?: string;
   onMarkClick: (id: string, e: ReactMouseEvent) => void;
   onSelect: (sel: LayoutSelection) => void;
@@ -158,7 +253,7 @@ function PageBlock({
   }
 
   return (
-    <figure className="m-0">
+    <figure className="m-0" data-focus-block>
       <div
         ref={ref}
         data-page={page.pageNum}
@@ -180,12 +275,14 @@ function PageBlock({
           {marks.flatMap((hl) =>
             hl.anchor.kind === "page"
               ? hl.anchor.rects.map((r, i) => (
-                  <div
+                  <MarkShape
                     key={`${hl.id}-${i}`}
-                    data-lh={hl.id}
-                    className="pa-lh"
-                    title={markTitles?.[hl.id] || undefined}
-                    style={markStyle(r, hl.type, hl.color)}
+                    r={r}
+                    type={hl.type}
+                    color={hl.color}
+                    title={markTitles?.[hl.id]}
+                    id={hl.id}
+                    selected={selectedIds?.has(hl.id) ?? false}
                   />
                 ))
               : []
@@ -222,7 +319,9 @@ export default function LayoutCanvas({
   highlights,
   clean,
   markTitles,
+  selectedIds,
   sheetClass,
+  zoom,
   onMarkClick,
   onSelect,
   onPageSeen,
@@ -247,17 +346,23 @@ export default function LayoutCanvas({
   return (
     <div className="space-y-9">
       {pages.map((p) => (
-        <PageBlock
+        <div
           key={p.pageNum}
-          page={p}
-          highlights={highlights}
-          clean={clean}
-          markTitles={markTitles}
-          sheetClass={sheetClass}
-          onMarkClick={onMarkClick}
-          onSelect={onSelect}
-          pageNotes={pageNotes}
-        />
+          className="mx-auto transition-[width] duration-200 ease-out"
+          style={{ width: `${Math.round(zoom * 100)}%` }}
+        >
+          <PageBlock
+            page={p}
+            highlights={highlights}
+            clean={clean}
+            markTitles={markTitles}
+            selectedIds={selectedIds}
+            sheetClass={sheetClass}
+            onMarkClick={onMarkClick}
+            onSelect={onSelect}
+            pageNotes={pageNotes}
+          />
+        </div>
       ))}
     </div>
   );

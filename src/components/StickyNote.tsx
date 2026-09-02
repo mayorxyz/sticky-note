@@ -1,164 +1,180 @@
-import { useMemo, type CSSProperties, type KeyboardEvent } from "react";
+import { useMemo, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import type { Note, NoteFont, NoteInk } from "../data/types";
 import { NOTE_FONTS, NOTE_INKS } from "../data/types";
 import { IconCheck, IconMaximize, IconMinimize, IconPen, IconTrash } from "./icons";
 
-const FONT_STACK: Record<NoteFont, string> = {
-  caveat: "var(--font-note-caveat)",
-  kalam: "var(--font-note-kalam)",
-  "patrick-hand": "var(--font-note-patrick)",
-};
-
-const FONT_SIZE: Record<NoteFont, string> = {
-  caveat: "1.32rem",
-  kalam: "1rem",
-  "patrick-hand": "1.06rem",
-};
-
-const INK_COLOR: Record<NoteInk, string> = {
-  blue: "var(--ink-blue)",
-  red: "var(--ink-red)",
-  pencil: "var(--ink-pencil)",
+const FONT_CYCLE: NoteFont[] = ["caveat", "kalam", "patrick-hand", "shadows", "indie", "architects"];
+const INK_CYCLE: NoteInk[] = ["blue", "red", "pencil"];
+/** size factor per hand, so each face reads at a comparable scale */
+const SIZE_FACTOR: Record<NoteFont, number> = {
+  caveat: 1.25,
+  kalam: 0.94,
+  "patrick-hand": 1.0,
+  shadows: 1.05,
+  indie: 0.95,
+  architects: 0.88,
 };
 
 interface Props {
   note: Note;
-  /** snippet of the annotated passage, shown on the collapsed card */
   snippet?: string;
   onPatch: (id: string, patch: Partial<Note>) => void;
   onDelete: (id: string) => void;
+  /** present only for draggable margin notes (desktop) */
+  onLiftPointerDown?: (e: PointerEvent, noteId: string) => void;
 }
 
-export default function StickyNote({ note, snippet, onPatch, onDelete }: Props) {
+export default function StickyNote({ note, snippet, onPatch, onDelete, onLiftPointerDown }: Props) {
   const tilt = useMemo(() => {
-    const h = Array.from(note.id).reduce((a, c) => a + c.charCodeAt(0), 0);
-    return ((h % 31) / 10 - 1.5).toFixed(2);
+    let h = 0;
+    for (const ch of note.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return ((h % 100) / 100) * 3 - 1.5;
   }, [note.id]);
 
-  function addTagFromInput(e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key !== "Enter") return;
-    e.preventDefault();
-    const v = e.currentTarget.value.trim().replace(/^#/, "");
-    if (!v) return;
-    if (!note.tags.includes(v)) onPatch(note.id, { tags: [...note.tags, v] });
-    e.currentTarget.value = "";
+  const fontCss = NOTE_FONTS.find((f) => f.key === note.font)?.css ?? NOTE_FONTS[0].css;
+  const inkCss = NOTE_INKS.find((i) => i.key === note.ink)?.css ?? NOTE_INKS[0].css;
+
+  function onTextareaKey(e: KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      onPatch(note.id, { collapsed: true });
+    }
   }
 
   const style: CSSProperties = {
-    transform: `rotate(${tilt}deg)`,
-    fontFamily: FONT_STACK[note.font],
-    fontSize: FONT_SIZE[note.font],
-    color: INK_COLOR[note.ink],
+    fontFamily: fontCss,
+    color: inkCss,
+    fontSize: `calc(var(--note-size) * ${SIZE_FACTOR[note.font] ?? 1})`,
+    rotate: `${tilt}deg`,
+    transition: "box-shadow 0.2s ease, opacity 0.25s ease, filter 0.25s ease",
   };
-
-  const toolbar = (
-    <div className="note-toolbar" role="toolbar" aria-label="Note controls">
-      {NOTE_FONTS.map((f) => (
-        <button
-          key={f.key}
-          title={`${f.label} hand`}
-          aria-label={`Font: ${f.label}`}
-          aria-pressed={note.font === f.key}
-          style={{ fontFamily: FONT_STACK[f.key], fontSize: "0.95rem", fontWeight: 700, opacity: note.font === f.key ? 1 : 0.55 }}
-          onClick={() => onPatch(note.id, { font: f.key })}
-        >
-          A
-        </button>
-      ))}
-      {NOTE_INKS.map((i) => (
-        <button
-          key={i.key}
-          title={i.label}
-          aria-label={`Ink: ${i.label}`}
-          aria-pressed={note.ink === i.key}
-          onClick={() => onPatch(note.id, { ink: i.key })}
-        >
-          <span
-            className="block h-2.5 w-2.5 rounded-full border border-[rgba(var(--shadow-ink),0.3)]"
-            style={{ background: INK_COLOR[i.key], outline: note.ink === i.key ? "1.5px solid var(--ink)" : "none", outlineOffset: 1 }}
-          />
-        </button>
-      ))}
-      <button
-        title={note.collapsed ? "Expand note" : "Collapse note"}
-        aria-label={note.collapsed ? "Expand note" : "Collapse note"}
-        onClick={() => onPatch(note.id, { collapsed: !note.collapsed })}
-      >
-        {note.collapsed ? <IconMaximize size={13} /> : <IconMinimize size={13} />}
-      </button>
-      <button title="Tear note off" aria-label="Delete note" onClick={() => onDelete(note.id)}>
-        <IconTrash size={13} />
-      </button>
-    </div>
-  );
 
   return (
     <div
-      id={`note-${note.id}`}
       data-note-anchor={note.id}
-      className="pa-note wiggle-hover h-full"
+      id={`note-${note.id}`}
+      className={`pa-note${note.resolved ? " resolved" : ""}`}
       style={style}
-      aria-label={`Sticky note${note.tags.length ? ` tagged ${note.tags.map((t) => "#" + t).join(", ")}` : ""}`}
+      aria-label={`Sticky note${note.tags.length ? `, tagged ${note.tags.join(", ")}` : ""}`}
     >
-      <span className="fold-corner" aria-hidden="true" />
-      {toolbar}
+      <div className="note-toolbar" data-nodrag>
+        <button
+          title={note.resolved ? "Reopen this note" : "Mark note as resolved"}
+          aria-pressed={!!note.resolved}
+          className={note.resolved ? "toggled" : ""}
+          onClick={() => onPatch(note.id, { resolved: !note.resolved })}
+        >
+          <IconCheck size={13} />
+        </button>
+        <button
+          title="Switch handwriting"
+          onClick={() =>
+            onPatch(note.id, {
+              font: FONT_CYCLE[(FONT_CYCLE.indexOf(note.font) + 1) % FONT_CYCLE.length],
+            })
+          }
+        >
+          <IconPen size={13} />
+        </button>
+        <button
+          title="Switch ink"
+          onClick={() =>
+            onPatch(note.id, { ink: INK_CYCLE[(INK_CYCLE.indexOf(note.ink) + 1) % INK_CYCLE.length] })
+          }
+        >
+          <span
+            className="inline-block h-3 w-3 rounded-full border border-[rgba(60,50,10,0.4)]"
+            style={{ background: inkCss }}
+          />
+        </button>
+        <button
+          title={`Move to ${note.placement === "margin" ? "freeform" : "the margin rail"}`}
+          onClick={() =>
+            onPatch(note.id, { placement: note.placement === "margin" ? "freeform" : "margin" })
+          }
+        >
+          {note.placement === "margin" ? <IconMaximize size={13} /> : <IconMinimize size={13} />}
+        </button>
+        <button
+          title={note.collapsed ? "Expand note" : "Collapse note"}
+          onClick={() => onPatch(note.id, { collapsed: !note.collapsed })}
+        >
+          {note.collapsed ? <IconMaximize size={13} /> : <IconMinimize size={13} />}
+        </button>
+        <button title="Tear up note" onClick={() => onDelete(note.id)}>
+          <IconTrash size={13} />
+        </button>
+      </div>
+
+      {onLiftPointerDown && (
+        <span
+          className="drag-grip"
+          data-nodrag
+          title="Drag — drop on the margin rail to pin it there, or anywhere else to leave it free"
+          onPointerDown={(e) => onLiftPointerDown(e, note.id)}
+        >
+          <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden="true">
+            <circle cx="2.5" cy="2.5" r="1.3" />
+            <circle cx="7.5" cy="2.5" r="1.3" />
+            <circle cx="2.5" cy="7" r="1.3" />
+            <circle cx="7.5" cy="7" r="1.3" />
+            <circle cx="2.5" cy="11.5" r="1.3" />
+            <circle cx="7.5" cy="11.5" r="1.3" />
+          </svg>
+        </span>
+      )}
 
       {note.collapsed ? (
         <button
-          className="w-full cursor-pointer text-left"
+          className="block w-full text-left"
           onClick={() => onPatch(note.id, { collapsed: false })}
-          aria-expanded="false"
           title="Expand note"
         >
-          <span className="block text-[0.72em] font-bold opacity-70">
-            <IconPen size={12} className="mr-1 inline" style={{ verticalAlign: "-2px" }} />
-            {note.tags.slice(0, 3).map((t) => `#${t}`).join(" ") || "note"}
-          </span>
-          <span className="mt-0.5 line-clamp-2 block text-[0.85em] leading-snug opacity-80">
-            {note.content.trim() || snippet || "…"}
+          <span className="block truncate text-[0.85em] font-semibold">
+            {note.content.trim()
+              ? note.content.trim().slice(0, 46)
+              : note.resolved
+                ? "✓ resolved"
+                : "…empty note"}
           </span>
         </button>
       ) : (
-        <div className="flex h-full flex-col">
+        <>
           <textarea
-            className="note-body flex-1"
+            className="note-body"
             value={note.content}
-            placeholder="Scribble here… #tags stick"
-            aria-label="Note text"
+            placeholder={snippet ? "Write back…" : "Jot something down…"}
             onChange={(e) => onPatch(note.id, { content: e.target.value })}
+            onKeyDown={onTextareaKey}
+            rows={Math.max(2, Math.min(8, note.content.split("\n").length + 1))}
+            aria-label="Note text — type #word to tag"
           />
-          <div className="mt-1 flex flex-wrap items-center gap-1">
-            {note.tags.map((t) => (
-              <span key={t} className="tag-chip" title={`Remove #${t}`}>
-                #{t}
-                <button
-                  className="cursor-pointer opacity-60 hover:opacity-100"
-                  aria-label={`Remove tag ${t}`}
-                  onClick={() => onPatch(note.id, { tags: note.tags.filter((x) => x !== t) })}
-                >
-                  ×
-                </button>
-              </span>
-            ))}
-            <input
-              className="w-14 bg-transparent text-[0.62rem] font-semibold text-inherit outline-none placeholder:opacity-45"
-              style={{ fontFamily: "var(--font-body)" }}
-              placeholder="+ tag"
-              aria-label="Add tag"
-              onKeyDown={addTagFromInput}
-            />
-          </div>
+          <textarea
+            className="note-body !min-h-0 opacity-70"
+            value={note.tags.map((t) => `#${t}`).join(" ")}
+            placeholder="#tags"
+            style={{ fontSize: "0.62em", fontFamily: "var(--font-body)", lineHeight: 1.4 }}
+            rows={1}
+            aria-label="Note tags, space separated"
+            onChange={(e) => {
+              const tags = Array.from(
+                e.target.value.matchAll(/#([\p{L}\d_-]+)/gu),
+                (m) => m[1].toLowerCase()
+              );
+              onPatch(note.id, { tags: Array.from(new Set(tags)) });
+            }}
+          />
           {snippet && (
             <p
               className="mt-1.5 border-t border-dashed border-[rgba(60,50,10,0.3)] pt-1 text-[0.62rem] leading-snug text-[rgba(60,50,10,0.75)]"
               style={{ fontFamily: "var(--font-body)" }}
             >
-              <IconCheck size={10} className="mr-0.5 inline" style={{ verticalAlign: "-1px" }} />
-              <span className="line-clamp-2 italic">“{snippet}”</span>
+              ↳ “{snippet.slice(0, 90)}{snippet.length > 90 ? "…" : ""}”
             </p>
           )}
-        </div>
+        </>
       )}
+      <span className="fold-corner" aria-hidden="true" />
     </div>
   );
 }

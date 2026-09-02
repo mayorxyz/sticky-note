@@ -29,6 +29,7 @@ interface Props {
   marks: Highlight[];
   /** highlightId → user label, surfaced as tooltip on the mark */
   markTitles?: Record<string, string>;
+  selectedIds?: Set<string>;
   sheetClass?: string;
   styleVars?: CSSProperties;
   onMarkClick: (id: string, e: ReactMouseEvent) => void;
@@ -41,6 +42,7 @@ interface Ctx {
   counter: { n: number };
   slug: (t: string) => string;
   markTitles?: Record<string, string>;
+  selectedIds?: Set<string>;
   onMarkClick: (id: string, e: ReactMouseEvent) => void;
 }
 
@@ -68,15 +70,23 @@ function segment(text: string, start: number, ctx: Ctx): ReactNode[] {
       continue;
     }
     const bg = covering.find((m) => m.type === "highlight");
-    const decos = covering.filter((m) => m.type !== "highlight");
-    const deco = decos
-      .map((m) => (m.type === "underline" ? "underline" : "line-through"))
-      .join(" ");
+    const under = covering.find((m) => m.type === "underline");
+    const strike = covering.find((m) => m.type === "strikethrough");
+    const squig = covering.find((m) => m.type === "squiggly");
+    const box = covering.find((m) => m.type === "box");
+    const circle = covering.find((m) => m.type === "circle");
+    const outlineMark = box ?? circle;
+    const decos: string[] = [];
+    if (under) decos.push("underline");
+    if (strike) decos.push("line-through");
+    if (squig && !under) decos.push("underline");
+    const decoColor = (under ?? strike ?? squig)?.color;
     const label = ctx.markTitles?.[covering[0].id];
+    const selected = covering.some((m) => ctx.selectedIds?.has(m.id));
     out.push(
       <span
         key={`m${s}-${e}`}
-        className="pa-mark"
+        className={`pa-mark${selected ? " pa-mark-sel" : ""}`}
         data-hlid={covering[0].id}
         aria-describedby={`note-${covering[0].id}`}
         title={label || undefined}
@@ -86,8 +96,12 @@ function segment(text: string, start: number, ctx: Ctx): ReactNode[] {
         }}
         style={{
           backgroundColor: bg ? `var(--hl-${bg.color})` : undefined,
-          textDecoration: deco || undefined,
-          textDecorationColor: decos.length ? `var(--hl-${decos[0].color}-solid)` : undefined,
+          textDecorationLine: decos.length ? decos.join(" ") : undefined,
+          textDecorationStyle: squig && !under ? "wavy" : undefined,
+          textDecorationColor: decoColor ? `var(--hl-${decoColor}-solid)` : undefined,
+          outline: outlineMark ? `2px solid var(--hl-${outlineMark.color}-solid)` : undefined,
+          outlineOffset: outlineMark ? "1.5px" : undefined,
+          borderRadius: circle ? "0.7em" : undefined,
         }}
       >
         {piece}
@@ -167,31 +181,34 @@ function blocks(tokens: Token[], ctx: Ctx, keyPrefix: string): ReactNode[] {
         const id = ctx.slug(h.text);
         const Tag = `h${Math.min(6, h.depth)}` as "h1";
         out.push(
-          <Tag key={key} id={id}>
+          <Tag key={key} id={id} data-focus-block>
             {inline(h.tokens, ctx, key)}
           </Tag>
         );
         break;
       }
       case "paragraph":
-        out.push(<p key={key}>{inline((t as Tokens.Paragraph).tokens, ctx, key)}</p>);
+        out.push(<p key={key} data-focus-block>{inline((t as Tokens.Paragraph).tokens, ctx, key)}</p>);
         break;
       case "text": {
         const tt = t as Tokens.Text;
-        if (tt.tokens?.length) out.push(<p key={key}>{inline(tt.tokens as Token[], ctx, key)}</p>);
-        else if (tt.text) out.push(<p key={key}>{emitText(tt.text, ctx)}</p>);
+        if (tt.tokens?.length)
+          out.push(<p key={key} data-focus-block>{inline(tt.tokens as Token[], ctx, key)}</p>);
+        else if (tt.text) out.push(<p key={key} data-focus-block>{emitText(tt.text, ctx)}</p>);
         break;
       }
       case "blockquote":
         out.push(
-          <blockquote key={key}>{blocks((t as Tokens.Blockquote).tokens, ctx, key)}</blockquote>
+          <blockquote key={key} data-focus-block>
+            {blocks((t as Tokens.Blockquote).tokens, ctx, key)}
+          </blockquote>
         );
         break;
       case "code": {
         const ct = t as Tokens.Code;
         ctx.counter.n += ct.text.length; // counted verbatim, like the DOM <pre> text
         out.push(
-          <pre key={key}>
+          <pre key={key} data-focus-block>
             <code>{ct.text}</code>
           </pre>
         );
@@ -204,22 +221,22 @@ function blocks(tokens: Token[], ctx: Ctx, keyPrefix: string): ReactNode[] {
         ));
         out.push(
           lt.ordered ? (
-            <ol key={key} start={lt.start === "" ? 1 : Number(lt.start)}>
+            <ol key={key} data-focus-block start={lt.start === "" ? 1 : Number(lt.start)}>
               {items}
             </ol>
           ) : (
-            <ul key={key}>{items}</ul>
+            <ul key={key} data-focus-block>{items}</ul>
           )
         );
         break;
       }
       case "hr":
-        out.push(<hr key={key} />);
+        out.push(<hr key={key} data-focus-block />);
         break;
       case "table": {
         const tb = t as Tokens.Table;
         out.push(
-          <table key={key}>
+          <table key={key} data-focus-block>
             <thead>
               <tr>
                 {tb.header.map((c, j) => (
@@ -312,12 +329,29 @@ export function scrollToOffset(root: HTMLElement, offset: number): boolean {
   return false;
 }
 
+/** Text offset of the first text node crossing `targetY` (viewport px) — used for bookmarks. */
+export function offsetAtPoint(root: HTMLElement, targetY: number): number {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let count = 0;
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const len = node.textContent?.length ?? 0;
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const rect = range.getBoundingClientRect();
+    if (rect.bottom >= targetY) return count;
+    count += len;
+  }
+  return count;
+}
+
 /* ————— component ————— */
 
 export default function ReflowCanvas({
   markdown,
   marks,
   markTitles,
+  selectedIds,
   sheetClass,
   styleVars,
   onMarkClick,
@@ -341,7 +375,7 @@ export default function ReflowCanvas({
   const counterRef = useRef({ n: 0 });
   counterRef.current.n = 0;
   const slug = makeSlugger(); // fresh per render — no accumulated state
-  const ctx: Ctx = { marks: textMarks, counter: counterRef.current, slug, markTitles, onMarkClick };
+  const ctx: Ctx = { marks: textMarks, counter: counterRef.current, slug, markTitles, selectedIds, onMarkClick };
   const rendered = blocks(lexMarkdown(markdown), ctx, "b");
 
   const rafRef = useRef(0);

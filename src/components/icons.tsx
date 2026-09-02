@@ -114,13 +114,6 @@ export const IconNote = make(
   </>
 );
 
-export const IconTag = make(
-  <>
-    <path d="M12.6 2.6 21 11a2 2 0 0 1 0 2.8l-7.2 7.2a2 2 0 0 1-2.8 0L2.6 12.6A2 2 0 0 1 2 11.2V4a2 2 0 0 1 2-2h7.2a2 2 0 0 1 1.4.6z" />
-    <circle cx="7.5" cy="7.5" r="1.3" fill="currentColor" stroke="none" />
-  </>
-);
-
 export const IconX = make(<path d="M18 6 6 18M6 6l12 12" />);
 
 export const IconChevronDown = make(<path d="m6 9 6 6 6-6" />);
@@ -163,6 +156,14 @@ export const IconStrike = make(
   </>
 );
 
+export const IconSquiggle = make(
+  <path d="M2 16c1.7-4 3.3-4 5 0s3.3 4 5 0 3.3-4 5 0 3.3 4 5 0" />
+);
+
+export const IconBox = make(<rect x="4" y="6" width="16" height="12" rx="1.5" />);
+
+export const IconCircle = make(<ellipse cx="12" cy="12" rx="9" ry="6.5" />);
+
 export const IconRows = make(
   <>
     <path d="M3 6h18" />
@@ -178,8 +179,6 @@ export const IconLayout = make(
     <path d="M15 9v12" />
   </>
 );
-
-export const IconPlus = make(<path d="M12 5v14M5 12h14" />);
 
 export const IconCheck = make(<path d="m20 6-11 11-5-5" />);
 
@@ -246,6 +245,65 @@ export const IconGear = make(
   <>
     <circle cx="12" cy="12" r="3.2" />
     <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.1-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z" />
+  </>
+);
+
+export const IconBookmark = make(
+  <path d="M19 21 12 16.8 5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+);
+
+export const IconQuote = make(
+  <>
+    <path d="M10 8c-3 .8-4.5 2.7-4.5 5.6 0 1.6 1 2.9 2.6 2.9 1.4 0 2.4-1 2.4-2.4 0-1.3-.9-2.2-2.1-2.2h-.4c.3-1.4 1.3-2.5 3-3.1z" />
+    <path d="M19 8c-3 .8-4.5 2.7-4.5 5.6 0 1.6 1 2.9 2.6 2.9 1.4 0 2.4-1 2.4-2.4 0-1.3-.9-2.2-2.1-2.2h-.4c.3-1.4 1.3-2.5 3-3.1z" />
+  </>
+);
+
+export const IconFocus = make(
+  <>
+    <circle cx="12" cy="12" r="3.4" />
+    <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
+  </>
+);
+
+export const IconZoomIn = make(
+  <>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m21 21-4.35-4.35" />
+    <path d="M8 11h6M11 8v6" />
+  </>
+);
+
+export const IconZoomOut = make(
+  <>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m21 21-4.35-4.35" />
+    <path d="M8 11h6" />
+  </>
+);
+
+export const IconPaste = make(
+  <>
+    <rect x="5" y="4" width="14" height="17" rx="2" />
+    <path d="M9 4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" />
+    <path d="M9 11h6M9 15h6" />
+  </>
+);
+
+export const IconDots = make(
+  <>
+    <circle cx="5" cy="12" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.1" fill="currentColor" stroke="none" />
+    <circle cx="19" cy="12" r="1.1" fill="currentColor" stroke="none" />
+  </>
+);
+
+export const IconList = make(
+  <>
+    <path d="M9 6h12M9 12h12M9 18h12" />
+    <circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none" />
+    <circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none" />
+    <circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none" />
   </>
 );
 

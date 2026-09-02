@@ -22,7 +22,6 @@ import {
 
 interface Props {
   settings: Settings;
-  sheetClass: string;
   storageBytes: number;
   onPatch: (patch: Partial<Settings>) => void;
   onBack: () => void;
@@ -56,15 +55,7 @@ function Section({
 }
 
 function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
-  return (
-    <button
-      className="switch"
-      role="switch"
-      aria-checked={on}
-      aria-label={label}
-      onClick={() => onChange(!on)}
-    />
-  );
+  return <button className="switch" role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)} />;
 }
 
 const THEMES: { key: ThemeChoice; label: string; note: string; bg: string; sheet: string }[] = [
@@ -75,6 +66,7 @@ const THEMES: { key: ThemeChoice; label: string; note: string; bg: string; sheet
 ];
 
 const FONT_SIZES = [15, 16, 17, 18, 20, 22];
+const NOTE_SIZES = [15, 17, 19, 21, 24];
 const WIDTHS: { px: number; label: string }[] = [
   { px: 640, label: "Narrow" },
   { px: 740, label: "Standard" },
@@ -86,6 +78,8 @@ const SHORTCUTS: { keys: string[]; what: string }[] = [
   { keys: ["U"], what: "Underline the selection" },
   { keys: ["S"], what: "Strikethrough the selection" },
   { keys: ["N"], what: "Attach a sticky note" },
+  { keys: ["Shift", "click"], what: "Select several marks for bulk actions" },
+  { keys: ["Delete"], what: "Tear up the selected marks" },
   { keys: ["Ctrl", "Z"], what: "Undo" },
   { keys: ["Ctrl", "Shift", "Z"], what: "Redo" },
   { keys: ["Esc"], what: "Dismiss selection, menus, search" },
@@ -94,7 +88,6 @@ const SHORTCUTS: { keys: string[]; what: string }[] = [
 
 export default function SettingsPage({
   settings,
-  sheetClass,
   storageBytes,
   onPatch,
   onBack,
@@ -145,8 +138,7 @@ export default function SettingsPage({
           </div>
         </header>
 
-        <div className={`paper-sheet rise rounded-xl px-5 py-2 sm:px-10 ${sheetClass}`}>
-          {/* ————— Appearance ————— */}
+        <div className="paper-sheet rise rounded-xl px-5 py-2 sm:px-10">
           <Section
             title="Paper tone"
             desc="Light and Dark are the two papers System may pick. Black is always an explicit choice — midnight paper with the grain still showing through."
@@ -219,10 +211,9 @@ export default function SettingsPage({
             </div>
           </Section>
 
-          {/* ————— Paper style ————— */}
           <Section
             title="Paper style"
-            desc="A texture laid over every sheet and card, independent of the tone. Aged and Blueprint bring their own ink."
+            desc="A texture laid over the reading surface only — the document canvas in layout and reflow mode. Library and Settings keep the plain desk."
             delay={90}
           >
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-7">
@@ -258,10 +249,9 @@ export default function SettingsPage({
             </div>
           </Section>
 
-          {/* ————— Highlight inks ————— */}
           <Section
             title="Highlight inks"
-            desc="Choose which colors sit in the picker, in what order, and pin a meaning to each — it shows as a tooltip on the swatch and on every mark that wears it."
+            desc="Nine inks, each tuned per paper tone for legibility. Choose which sit in the picker, in what order, and pin a meaning to each — it shows as a tooltip on the swatch and on every mark that wears it."
             delay={140}
           >
             <ul className="max-w-xl divide-y divide-dashed divide-[var(--line)]">
@@ -315,10 +305,9 @@ export default function SettingsPage({
             </ul>
           </Section>
 
-          {/* ————— Notes ————— */}
           <Section
             title="Sticky notes"
-            desc="Defaults for every fresh note. Each note can still switch its own hand, ink and placement afterwards."
+            desc="Defaults for every fresh note. Each note can still switch its own hand, ink and placement afterwards — and margin notes can be dragged free (and back)."
             delay={190}
           >
             <div className="flex flex-col gap-5">
@@ -363,7 +352,7 @@ export default function SettingsPage({
               </div>
               <div>
                 <p className="mb-1.5 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-ink-faint">Ink</p>
-                <div className="flex gap-2.5">
+                <div className="flex flex-wrap gap-2.5">
                   {NOTE_INKS.map((i) => {
                     const on = settings.defaultNoteInk === (i.key as NoteInk);
                     return (
@@ -385,10 +374,9 @@ export default function SettingsPage({
             </div>
           </Section>
 
-          {/* ————— Reading ————— */}
           <Section
             title="Reading"
-            desc="Body size and column width for reflow documents. Landscape orientation quietly adds room to the column."
+            desc="Body size and column width for reflow documents; note size is its own dial so hands stay legible at any body size. Landscape orientation quietly adds room to the column."
             delay={240}
           >
             <div className="flex flex-col gap-5">
@@ -416,6 +404,29 @@ export default function SettingsPage({
                 </div>
               </div>
               <div>
+                <p className="mb-1.5 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-ink-faint">Note size</p>
+                <div className="flex flex-wrap items-end gap-1.5">
+                  {NOTE_SIZES.map((px) => {
+                    const on = settings.noteFontSize === px;
+                    return (
+                      <button
+                        key={px}
+                        aria-pressed={on}
+                        onClick={() => onPatch({ noteFontSize: px })}
+                        className={`rounded-lg border px-3 pb-1.5 pt-2 transition-all hover:-translate-y-0.5 ${
+                          on ? "border-accent bg-[rgba(var(--shadow-ink),0.05)]" : "border-line hover:border-ink-faint"
+                        }`}
+                      >
+                        <span className="leading-none text-ink" style={{ fontFamily: "var(--font-note-caveat)", fontSize: `${8 + (px - 15) * 1.15}px` }}>
+                          Aa
+                        </span>
+                        <span className="mt-1 block text-[0.6rem] font-semibold text-ink-faint">{px}px</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
                 <p className="mb-1.5 text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-ink-faint">Column width</p>
                 <div className="seg" role="group" aria-label="Reading width">
                   {WIDTHS.map((w) => (
@@ -428,13 +439,12 @@ export default function SettingsPage({
             </div>
           </Section>
 
-          {/* ————— Export ————— */}
           <Section
             title="Export"
             desc="Your preferred format floats to the top of the Export menu and wears the “default” tag."
             delay={290}
           >
-            <div className="flex flex-col gap-2 max-w-xl">
+            <div className="flex max-w-xl flex-col gap-2">
               {(
                 [
                   { key: "pdf", name: "Annotated PDF", hint: "Flattened pages with marks baked in (needs layout pages)" },
@@ -453,7 +463,7 @@ export default function SettingsPage({
                     }`}
                   >
                     <span
-                      className={`grid h-4.5 w-4.5 shrink-0 place-items-center rounded-full border-2 ${
+                      className={`grid h-[1.1rem] w-[1.1rem] shrink-0 place-items-center rounded-full border-2 ${
                         on ? "border-accent" : "border-ink-faint"
                       }`}
                     >
@@ -469,7 +479,6 @@ export default function SettingsPage({
             </div>
           </Section>
 
-          {/* ————— Data ————— */}
           <Section
             title="Data & storage"
             desc="Everything lives in this browser under one versioned key. Take the whole desk with you as a single JSON, or burn it all down."
@@ -479,7 +488,8 @@ export default function SettingsPage({
               <div className="flex items-baseline justify-between">
                 <p className="text-[0.62rem] font-semibold uppercase tracking-[0.16em] text-ink-faint">Local storage used</p>
                 <p className="font-display text-sm font-bold text-ink">
-                  {formatBytes(storageBytes)} <span className="font-body text-[0.68rem] font-medium text-ink-faint">of ~5 MB</span>
+                  {formatBytes(storageBytes)}{" "}
+                  <span className="font-body text-[0.68rem] font-medium text-ink-faint">of ~5 MB</span>
                 </p>
               </div>
               <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-paper-deep shadow-inner">
@@ -543,7 +553,6 @@ export default function SettingsPage({
             </div>
           </Section>
 
-          {/* ————— Shortcuts ————— */}
           <Section
             title="Keyboard"
             desc="Mark tools work while a text selection is open. Undo covers every mark, note, move, resize and tear."
